@@ -160,6 +160,9 @@ Phase C: Spark ingestion
 - [x] Make Rabbit credentials and queue configurable
 - [ ] Integration test with local Rabbit (docker-compose)
   - [x] Add local Rabbit docker-compose service
+  - [x] Add smoke test script (`scripts/local_smoke_test.sh`) to seed queues and run both apps
+  - [ ] Verify accident publish and Spark processing end-to-end locally
+  - [x] Add local Rabbit docker-compose service
   - [ ] Smoke test connector → telematics_raw_for_spark
   - [ ] Smoke test Spark read → HDFS/accidents publish
 
@@ -175,6 +178,7 @@ Phase E: Accident detection and outputs
 Phase F: HDFS Parquet sink
 - [x] Write all flattened records to Parquet at `/insurance-megacorp/telemetry-data-v2/date=__HIVE_DEFAULT_PARTITION__`
 - [x] Configure checkpointing, rollover, and partitioning by date only
+  - Note: Local smoke test uses `/insurance-megacorp/telemetry-test` output path
 
 Phase G: Observability and ops
 - [x] Standard logging for both modules
