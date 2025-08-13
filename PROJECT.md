@@ -134,15 +134,17 @@ General documentation can live here. The plan section below is specifically pars
 ## Development Plan
 
 ## Phase: Telemetry Processor
-- [X] Implement functions: forward all events to HDFS branch; accidentsOut for g_force > 5.0
-- [X] Configure bindings for input and dual outputs (input queue, HDFS sink channel, vehicle-events)
-- [ ] Robust JSON handling: tolerate enhanced and legacy shapes; null-safe accessors
-- [ ] Validation: drop/log malformed payloads; include truncated sample in logs
-- [ ] Error handling: backoff and DLQ configuration; document retry policy
-- [ ] Metrics hooks: count total, accidents, invalid messages (Micrometer)
+- [X] Implement function: vehicleEventsOut (tap) for g_force > threshold; emit flattened JSON
+- [X] Configure bindings for input and vehicle-events output
+- [X] Robust JSON handling: flatten enhanced schema; null-safe accessors for nested fields
+- [X] Validation: log and drop malformed payloads
+- [X] Error handling: DLQ enabled via consumer properties; base retry policy in template
+- [X] Metrics: Micrometer counters for total, vehicle events, invalid
 - [ ] Unit tests: g_force thresholds, missing fields, malformed JSON
-- [ ] Integration test: end-to-end with embedded broker (testbinder) verifying dual-output routing
-- [ ] Configurability: thresholds via env; content-type enforcement
+- [ ] Integration test: end-to-end with embedded broker (testbinder)
+- [X] Configurability: threshold via env; content-type header on outputs
+- [X] Local smoke test: Docker RabbitMQ, declare topology, publish sample, verify queue counts (non-consuming)
+- [X] Operator UX: wait-loop for message arrival and optional Rabbit UI pause
 
 ## Phase: HDFS Sink
 - [X] Write Parquet with minimal schema (raw_json) and SNAPPY compression
@@ -160,16 +162,17 @@ General documentation can live here. The plan section below is specifically pars
 - [X] Interactive menu with color/icons; global and per-stream operations
 - [X] Global config.yml, per-stream config-<name>.yml, streams-index.yml
 - [ ] Stream CRUD UX: create, edit, delete stream configs; rename stream
-- [ ] Validation: verify GitHub URLs resolve to release JARs; fallback tag prompt
-- [ ] Operations: register/unregister default apps; register custom app by GitHub URL
-- [ ] Status: show stream deployments with colorized state; undeploy/deploy actions
+- [X] Validation: verify GitHub URLs resolve to release JARs; fallback warnings
+- [ ] Operations: unregister default apps; register custom app by GitHub URL (menu added)
+- [X] Status: show stream deployment status
 - [ ] Non-interactive flags: NO_PROMPT, DEBUG; exit codes for CI usage
 - [ ] README runbook for usage and env vars (TOKEN, SCDF_CLIENT_ID/SECRET)
 
 ## Phase: SCDF Integration
+- [X] Processor app is SCDF-ready (function definition and bindings)
 - [ ] Register apps in SCDF (processor, sink) using manager
 - [ ] Create and deploy single fan-out stream; verify status transitions
-- [ ] End-to-end validation with sample telemetry (accident + non-accident)
+- [ ] End-to-end validation with sample telemetry (vehicle_event + non-event)
 - [ ] Troubleshooting: capture SCDF error responses; suggest remediation
 
 ## Phase: Documentation & Ops
