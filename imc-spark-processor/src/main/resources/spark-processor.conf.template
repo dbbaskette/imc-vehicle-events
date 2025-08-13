@@ -1,0 +1,25 @@
+# Spark processor configuration (copy to spark-processor.conf and edit)
+
+spark.master = spark://your-spark-master:7077
+
+# Use a single URI for RabbitMQ (username:password embedded; include vhost at the end)
+# Example: amqp://user:pass@rabbit-host:5672/your-vhost
+rabbit.uri = amqp://<username>:<password>@<rabbit-host>:5672/<vhost>
+
+# Spark reads from the connector-forwarded queue
+rabbit.inputQueue = telematics_raw_for_spark
+
+# Publish accidents for consumers on vehicle-events
+rabbit.vehicleEventsExchange = vehicle-events
+rabbit.vehicleEventsGroup = vehicle-events-group
+
+hdfs.namenodeUri = hdfs://namenode:8020
+hdfs.outputPath = /insurance-megacorp/telemetry-data-v2
+
+greenplum.url = jdbc:postgresql://<gp-host>:5432/<database>
+greenplum.user = <user>
+greenplum.password = <password>
+greenplum.table = schema.accidents
+
+processing.triggerMs = 2000
+

@@ -1,29 +1,45 @@
-# Project Brief: IMC Vehicle Events
+# Project Brief: IMC Rabbit + Spark Suite
 
 ## 1. Project Overview & Goal
 
-- **Primary goal**: Consume telematics events from RabbitMQ using Spring Cloud Stream, detect potential crash events in real time, and make the raw JSON available downstream. Schema flattening will occur later in a Spark processor (to be implemented).
+- **Primary goal**: Ingest telematics events from RabbitMQ and process them in Spark.
+  - Spark will:
+    - Read raw JSON from RabbitMQ queue `telematics_raw_for_spark` (forwarded by connector)
+    - Flatten the JSON structure
+    - Detect accidents (primary rule: `g_force > 5.0`)
+      - If accident: write to Greenplum accident table (via Greenplum Spark Connector)
+      - Also publish the flattened accident record to Rabbit: exchange/queue `vehicle-events` (consumers use group `vehicle-events-group`)
+    - Write all flattened records to HDFS as Parquet (every record)
+  - Demo scale: tens of events/sec; keep simple and low-latency.
+  - Modules:
+    - `imc-rabbit-spark-connector`: Spring Cloud Stream Rabbit connector that consumes raw telemetry JSON; provides optional output binding to publish accidents produced by Spark.
+    - `imc-spark-processor`: Spark processor for flattening, detection, HDFS output, Greenplum writes, and accident publish to Rabbit.
+
+
+
 - **End users**: Internal analytics/claims platforms and real-time monitoring tools.
 
 ## 2. Tech Stack
 
 - **Language**: Java 21
-- **Frameworks**: Spring Boot 3.5.3, Spring Cloud Stream 2024.0.0 (Rabbit binder)
+- **Frameworks**: Spring Boot 3.5.3, Spring Cloud Stream 2024.0.0 (Rabbit binder), Spark 4.0 (Scala 2.13)
+- **Database**: Greenplum
 - **Messaging**: RabbitMQ
 - **Logging**: SLF4J
 - **Build**: Maven with Maven Wrapper (`./mvnw`)
 
 ## 3. Architecture & Design
 
-- **High-Level Architecture**: Event-driven microservice. Spring Cloud Stream `Consumer<byte[]>` bound to RabbitMQ queue `telematics_work_queue` with consumer group `crash-detection-group`.
+- **High-Level Architecture**:
+  - Connector: Spring Cloud Stream `Consumer<byte[]>` to optionally receive from Rabbit (logs receipt; no transform). May be disabled where Spark reads directly.
+  - Spark: Structured Streaming job that reads from RabbitMQ, flattens, detects accidents, writes outputs.
 - **Processing**:
-  - Receive raw JSON payloads from RabbitMQ.
-  - Do not transform/process payloads in the connector.
-  - Preserve and forward raw JSON for Spark processing where the schema will be flattened.
-- **Backward compatibility**: Accepts both the legacy flat schema and the enhanced schema; detection is tolerant of missing fields.
+  - Connector: minimal responsibility; raw JSON only; optional producer to publish accidents.
+  - Spark: source of truth for processing pipeline.
+- **Backward compatibility**: Enhanced schema preferred; legacy flat fields supported during flattening.
 - **Directory Structure**:
-  - `src/main/java/com/insurancemegacorp/vehicleevents/`: Spring Boot app
-  - `src/main/resources/`: Configuration templates (`application*.yml.template`)
+  - `imc-rabbit-spark-connector/`: Spring Boot connector and its `application*.yml.template` files
+  - `imc-spark-processor/`: Spark job and its config templates
 
 ## 4. Message Schema
 
@@ -67,12 +83,14 @@
 
 ## 5. Processing Flow
 
-1. RabbitMQ message received as bytes; raw JSON string is logged.
-2. If the payload contains `sensors`, treat it as enhanced schema; otherwise, treat as legacy flat schema.
-3. Crash detection:
-   - Primary rule: `g_force > 5.0` indicates crash.
-   - Fallbacks: Optional magnitude checks from accelerometer can be added later if desired.
-4. Raw JSON is preserved for downstream Spark processor which will handle flattening and further analytics.
+1. Connector consumes raw JSON from RabbitMQ queue `telematics_work_queue` and always forwards it unchanged to queue `telematics_raw_for_spark`.
+2. Spark reads raw JSON from RabbitMQ queue `telematics_raw_for_spark`.
+3. Flatten JSON into a canonical schema (support enhanced and legacy fields).
+4. Accident detection:
+   - Primary rule: `g_force > 5.0` → accident
+   - If accident: write to Greenplum accident table and publish to Rabbit `vehicle-events` (group `vehicle-events-group`).
+5. Write all flattened records to HDFS as Parquet at `/insurance-megacorp/telemetry-data-v2/date=__HIVE_DEFAULT_PARTITION__` (partition by date only).
+
 
 ## 6. Coding Standards & Conventions
 
@@ -90,26 +108,87 @@
 
 ## 8. Configuration
 
-- Queue: `telematics_work_queue`
-- Group: `crash-detection-group`
+- RabbitMQ input (Connector): queue `telematics_work_queue`
+- RabbitMQ input (Spark): queue `telematics_raw_for_spark`
+- RabbitMQ accident output: exchange/queue `vehicle-events` (consumers use group `vehicle-events-group`)
 - Content-Type: `application/json`
-- Templates: `application.yml.template`, `application-cloud.yml.template`, `application-tunnel.yml.template`
+- Connector templates: `imc-rabbit-spark-connector/src/main/resources/application*.yml.template`
+- Spark processor config (untracked): `imc-spark-processor/src/main/resources/spark-processor.conf.template` → copy to `spark-processor.conf`
+  - Keys:
+    - `spark.master = <spark://host:port | yarn | k8s master>`
+    - `rabbit.uri = amqp://user:pass@host:5672/vhost`
+    - `rabbit.inputQueue = telematics_work_queue`
+    - `rabbit.accidentExchange = vehicle-events`
+    - `hdfs.namenodeUri = hdfs://namenode:8020`
+    - `hdfs.outputPath = /insurance-megacorp/telemetry-data-v2`
+    - `greenplum.url = jdbc:pivotal:greenplum://host:port;DatabaseName=db`
+    - `greenplum.user = <user>`
+    - `greenplum.password = <password>`
+    - `greenplum.table = schema.accidents`
+    - `processing.triggerMs = 2000`
 
 ## 9. Versions
 
 - Spring Boot: 3.5.3 (parent POM)
 - Spring Cloud: 2024.0.0 (via BOM)
-- Java: 21
+- Spark: 4.0 (Scala 2.13), Java 21
+- Java (connector): 21
 - Maven Wrapper: included (`./mvnw`)
 - Note: No `versions.txt` currently. If introduced, align POM versions accordingly.
 
+## 10. Performance & Deployment
+
+- Throughput: tens of events/sec (demo)
+- Trigger: recommend micro-batch trigger of 2s; no watermarking
+- HDFS: small test cluster; partition by date only; write as `hdfs` user (no Kerberos)
+- Deployment: Spark runs on separate server/cluster; pass master and endpoints via `spark-processor.conf`; package uber-jar with Spark deps provided
+
+## 11. Development Plan Checklist
+
+Phase A: Baseline and versions
+- [x] Update Spark module to Spark 4.0 (Scala 2.13), Java 21 in POM
+- [x] Add shaded/assembly packaging for Spark job (provided Spark deps)
+- [x] Verify root build of both modules
+
+Phase B: Config templates
+- [x] Add `spark-processor.conf.template` with Rabbit, HDFS, Greenplum, trigger settings
+- [x] Document local `spark-processor.conf` (untracked) and env var overrides
+- [x] Add connector consumer `auto-startup` toggle in templates
+
+Phase C: Spark ingestion
+- [ ] Implement Rabbit ingestion in Spark (RabbitMQ Java client-based receiver)
+- [ ] Make Rabbit credentials and queue configurable
+- [ ] Integration test with local Rabbit (docker-compose)
+
+Phase D: Flattening and schema
+- [ ] Implement JSON flattening for enhanced schema; support legacy fields
+- [ ] Define canonical columns/types; add unit tests
+
+Phase E: Accident detection and outputs
+- [ ] Implement `g_force > 5.0` rule
+- [ ] Write accidents to Greenplum via Greenplum Spark Connector (external packaged software)
+- [ ] Publish accidents to Rabbit `vehicle-events`
+
+Phase F: HDFS Parquet sink
+- [ ] Write all flattened records to Parquet at `/insurance-megacorp/telemetry-data-v2/date=__HIVE_DEFAULT_PARTITION__`
+- [ ] Configure checkpointing, rollover, and partitioning by date only
+
+Phase G: Observability and ops
+- [ ] Standard logging for both modules
+- [ ] Basic health/readiness notes for connector
+
+Phase H: Packaging and deployment
+- [ ] Build Spark uber-jar; document spark-submit with `--properties-file`/conf
+- [ ] Update README with runbooks
+
+Phase I: Demo validation
+- [ ] Run `imc-telematics-gen` to generate events
+- [ ] End-to-end verification: Rabbit → Spark → HDFS + GP + Rabbit accidents
+- [ ] Document gotchas
+
+## 12. Security & Observability
+
+- Secrets via environment variables; no secret manager integration
+- Standard logging; no additional metrics/JMX required
+
 ## 10. Future Work
-
-- Implement Spark processor to ingest the raw JSON, flatten schema, and write to downstream storage/analytics systems.
-- Optionally publish the raw JSON to a topic/queue dedicated for Spark ingestion.
-- Consider additional crash heuristics (accelerometer/gyroscope patterns) if needed.
-
-## 11. Open Questions
-
-- Should we add an output binding to forward raw JSON to a Spark-ingestion queue now, or wait for Spark implementation?
-- Confirm final crash threshold and any multi-sensor criteria.

@@ -8,6 +8,14 @@ spring:
           destination: telematics_work_queue
           group: crash-detection-group
           content-type: application/json
+        rawToSpark-out-0:
+          destination: telematics_raw_for_spark
+          content-type: application/json
+      function:
+        definition: consumeRawTelematics
+      default:
+        consumer:
+          auto-startup: ${CONNECTOR_AUTO_STARTUP:true}
       rabbit:
         bindings:
           consumeRawTelematics-in-0:
@@ -15,6 +23,9 @@ spring:
               auto-bind-dlq: true
               durable-subscription: true
               max-attempts: 3
+          rawToSpark-out-0:
+            producer:
+              confirm-type: correlated
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

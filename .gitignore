@@ -24,3 +24,4 @@ bind-key.json
 # Ignore any non-template YAML property files
 **/src/main/resources/*.yml
 !**/src/main/resources/*.yml.template
+**/src/main/resources/spark-processor.conf*.properties
