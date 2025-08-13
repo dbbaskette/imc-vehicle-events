@@ -159,6 +159,9 @@ Phase C: Spark ingestion
 - [x] Implement Rabbit ingestion in Spark (RabbitMQ Java client-based receiver)
 - [x] Make Rabbit credentials and queue configurable
 - [ ] Integration test with local Rabbit (docker-compose)
+  - [x] Add local Rabbit docker-compose service
+  - [ ] Smoke test connector → telematics_raw_for_spark
+  - [ ] Smoke test Spark read → HDFS/accidents publish
 
 Phase D: Flattening and schema
 - [x] Implement JSON flattening for enhanced schema; support legacy fields

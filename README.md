@@ -28,6 +28,13 @@ cp application-tunnel.yml.template application-tunnel.yml
 ```
 Adjust `RABBITMQ_*` env vars and binding names as needed.
 
+### Local RabbitMQ (docker-compose)
+
+```bash
+docker compose up -d rabbitmq
+# UI: http://localhost:15672 (guest/guest)
+```
+
 ### 2. Build the Application
 
 ```bash
