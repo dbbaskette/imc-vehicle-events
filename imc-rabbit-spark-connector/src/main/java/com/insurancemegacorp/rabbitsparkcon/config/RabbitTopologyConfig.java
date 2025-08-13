@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitTopologyConfig {
 
     public static final String RAW_FOR_SPARK_DESTINATION = "telematics_raw_for_spark";
+    public static final String RAW_FOR_SPARK_GROUPED_QUEUE = "telematics_raw_for_spark.telematics_raw_for_spark-group";
 
     @Bean
     public TopicExchange rawForSparkExchange() {
@@ -19,7 +20,7 @@ public class RabbitTopologyConfig {
 
     @Bean
     public Queue rawForSparkQueue() {
-        return new Queue(RAW_FOR_SPARK_DESTINATION, true);
+        return new Queue(RAW_FOR_SPARK_GROUPED_QUEUE, true);
     }
 
     @Bean

@@ -6,7 +6,7 @@
 
     <groupId>com.insurancemegacorp</groupId>
     <artifactId>imc-rabbit-spark-suite</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>0.0.1</version>
     <packaging>pom</packaging>
     <name>imc-rabbit-spark-suite</name>
     <description>Parent project aggregating Rabbit connector and Spark processor</description>

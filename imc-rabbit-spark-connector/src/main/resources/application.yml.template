@@ -9,7 +9,7 @@ spring:
           group: crash-detection-group
           content-type: application/json
         rawToSpark-out-0:
-          destination: telematics_raw_for_spark
+          destination: telematics_raw_for_spark.telematics_raw_for_spark-group
           content-type: application/json
       function:
         definition: consumeRawTelematics

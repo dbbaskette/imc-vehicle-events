@@ -111,7 +111,7 @@ public class TelematicsSparkApp {
                 .foreachBatch((batch, batchId) -> {
                     batch.persist();
                     batch.foreachPartition(iter -> {
-                        try (Connection conn = gpUrl != null ? DriverManager.getConnection(gpUrl, gpUser, gpPassword) : null;
+                        try (Connection conn = (gpUrl != null && !gpUrl.isBlank()) ? DriverManager.getConnection(gpUrl, gpUser, gpPassword) : null;
                              com.rabbitmq.client.Connection amqpConn = createRabbitConnection(rabbitUri);
                              Channel channel = amqpConn != null ? amqpConn.createChannel() : null) {
                             PreparedStatement ps = null;
