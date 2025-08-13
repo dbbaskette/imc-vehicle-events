@@ -20,3 +20,11 @@ spring:
 hdfs:
   namenodeUri: ${HDFS_NAMENODE_URI}
   outputPath: ${HDFS_OUTPUT_PATH}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    metrics:
+      enabled: true
