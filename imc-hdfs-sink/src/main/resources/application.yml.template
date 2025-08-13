@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: imc-hdfs-sink
+  cloud:
+    function:
+      definition: writeToHdfs
+    stream:
+      bindings:
+        writeToHdfs-in-0:
+          destination: ${HDFS_SINK_DESTINATION:telemetry-hdfs-sink}
+          group: ${HDFS_SINK_GROUP:hdfs-sink-group}
+          content-type: application/json
+      rabbit:
+        bindings:
+          writeToHdfs-in-0:
+            consumer:
+              auto-bind-dlq: true
+              durable-subscription: true
+              max-attempts: 3
+hdfs:
+  namenodeUri: ${HDFS_NAMENODE_URI}
+  outputPath: ${HDFS_OUTPUT_PATH}

@@ -24,4 +24,12 @@ bind-key.json
 # Ignore any non-template YAML property files
 **/src/main/resources/*.yml
 !**/src/main/resources/*.yml.template
+**/src/main/resources/*.yaml
+!**/src/main/resources/*.yaml.template
+
+# SCDF manager local config
+imc-stream-manager/scdf-config.yml
+imc-stream-manager/config.yml
+imc-stream-manager/config-*.yml
+imc-stream-manager/streams-index.yml
 **/src/main/resources/spark-processor.conf*.properties

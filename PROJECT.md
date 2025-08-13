@@ -1,19 +1,17 @@
-# Project Brief: IMC Rabbit + Spark Suite
+# Project Brief: IMC Telemetry Stream (SCDF)
 
 ## 1. Project Overview & Goal
 
-- **Primary goal**: Ingest telematics events from RabbitMQ and process them in Spark.
-  - Spark will:
-    - Read raw JSON from RabbitMQ queue `telematics_raw_for_spark` (forwarded by connector)
-    - Flatten the JSON structure
-    - Detect accidents (primary rule: `g_force > 5.0`)
-      - If accident: write to Greenplum accident table (via Greenplum Spark Connector)
-      - Also publish the flattened accident record to Rabbit: exchange/queue `vehicle-events` (consumers use group `vehicle-events-group`)
-    - Write all flattened records to HDFS as Parquet (every record)
+- **Primary goal**: Stream-processing pipeline in Spring Cloud Data Flow (SCDF) to detect accidents and deliver outputs to RabbitMQ and HDFS.
+  - Source: RabbitMQ (reads `telematics_work_queue.crash-detection-group`)
+  - Processor: `imc-telemetry-processor` (detects accidents; forwards accidents only)
+  - Sinks:
+    - RabbitMQ sink → `vehicle-events.vehicle-events-group`
+    - `imc-hdfs-sink` → write telemetry JSON lines to HDFS
   - Demo scale: tens of events/sec; keep simple and low-latency.
   - Modules:
-    - `imc-rabbit-spark-connector`: Spring Cloud Stream Rabbit connector that consumes raw telemetry JSON; provides optional output binding to publish accidents produced by Spark.
-    - `imc-spark-processor`: Spark processor for flattening, detection, HDFS output, Greenplum writes, and accident publish to Rabbit.
+    - `imc-telemetry-processor`: Spring Cloud Stream processor (Rabbit in → accidents out)
+    - `imc-hdfs-sink`: Spring Cloud Stream sink (Rabbit in → HDFS append)
 
 
 
@@ -22,24 +20,24 @@
 ## 2. Tech Stack
 
 - **Language**: Java 21
-- **Frameworks**: Spring Boot 3.5.3, Spring Cloud Stream 2024.0.0 (Rabbit binder), Spark 4.0 (Scala 2.13)
-- **Database**: Greenplum
+- **Frameworks**: Spring Boot 3.5.3, Spring Cloud Stream 2024.0.0 (Rabbit binder)
 - **Messaging**: RabbitMQ
+- **Storage**: HDFS (Parquet)
 - **Logging**: SLF4J
 - **Build**: Maven with Maven Wrapper (`./mvnw`)
 
 ## 3. Architecture & Design
 
-- **High-Level Architecture**:
-  - Connector: Spring Cloud Stream `Consumer<byte[]>` to optionally receive from Rabbit (logs receipt; no transform). May be disabled where Spark reads directly.
-  - Spark: Structured Streaming job that reads from RabbitMQ, flattens, detects accidents, writes outputs.
+- **High-Level Architecture (SCDF)**:
+  - Stream: rabbit (source) → `imc-telemetry-processor` → rabbit sink (vehicle-events) and `imc-hdfs-sink`
+  - SCDF runs in Cloud Foundry; RabbitMQ is in CF; apps are registered in SCDF as processors/sinks
 - **Processing**:
-  - Connector: minimal responsibility; raw JSON only; optional producer to publish accidents.
-  - Spark: source of truth for processing pipeline.
-- **Backward compatibility**: Enhanced schema preferred; legacy flat fields supported during flattening.
+  - `imc-telemetry-processor`: forwards ALL telemetry to HDFS branch; emits ONLY accidents (`g_force > 5.0`) to vehicle-events branch
+  - `imc-hdfs-sink`: writes inbound telemetry as Parquet files partitioned by date
+- **Backward compatibility**: Enhanced schema preferred; legacy fields tolerated by processor when computing `g_force`
 - **Directory Structure**:
-  - `imc-rabbit-spark-connector/`: Spring Boot connector and its `application*.yml.template` files
-  - `imc-spark-processor/`: Spark job and its config templates
+  - `imc-telemetry-processor/`: SCDF processor app
+  - `imc-hdfs-sink/`: SCDF sink app
 
 ## 4. Message Schema
 
@@ -83,13 +81,12 @@
 
 ## 5. Processing Flow
 
-1. Connector consumes raw JSON from RabbitMQ queue `telematics_work_queue` and always forwards it unchanged to queue `telematics_raw_for_spark`.
-2. Spark reads raw JSON from RabbitMQ queue `telematics_raw_for_spark`.
-3. Flatten JSON into a canonical schema (support enhanced and legacy fields).
-4. Accident detection:
-   - Primary rule: `g_force > 5.0` → accident
-   - If accident: write to Greenplum accident table and publish to Rabbit `vehicle-events` (group `vehicle-events-group`).
-5. Write all flattened records to HDFS as Parquet at `/insurance-megacorp/telemetry-data-v2/date=__HIVE_DEFAULT_PARTITION__` (partition by date only).
+1. SCDF Rabbit source reads from `telematics_work_queue.crash-detection-group`
+2. SCDF routes to processor `imc-telemetry-processor`
+3. Processor extracts `g_force` and emits only accidents
+4. Accidents are fanned out to:
+   - Rabbit sink → `vehicle-events.vehicle-events-group`
+   - `imc-hdfs-sink` → HDFS append under `/insurance-megacorp/telemetry-data-v2/date=YYYY-MM-DD`
 
 
 ## 6. Coding Standards & Conventions
@@ -108,24 +105,11 @@
 
 ## 8. Configuration
 
-- RabbitMQ input (Connector): queue `telematics_work_queue`
-- RabbitMQ input (Spark): queue `telematics_raw_for_spark`
-- RabbitMQ accident output: exchange/queue `vehicle-events` (consumers use group `vehicle-events-group`)
-- Content-Type: `application/json`
-- Connector templates: `imc-rabbit-spark-connector/src/main/resources/application*.yml.template`
-- Spark processor config (untracked): `imc-spark-processor/src/main/resources/spark-processor.conf.template` → copy to `spark-processor.conf`
-  - Keys:
-    - `spark.master = <spark://host:port | yarn | k8s master>`
-    - `rabbit.uri = amqp://user:pass@host:5672/vhost`
-    - `rabbit.inputQueue = telematics_work_queue`
-    - `rabbit.accidentExchange = vehicle-events`
-    - `hdfs.namenodeUri = hdfs://namenode:8020`
-    - `hdfs.outputPath = /insurance-megacorp/telemetry-data-v2`
-    - `greenplum.url = jdbc:pivotal:greenplum://host:port;DatabaseName=db`
-    - `greenplum.user = <user>`
-    - `greenplum.password = <password>`
-    - `greenplum.table = schema.accidents`
-    - `processing.triggerMs = 2000`
+- RabbitMQ input: queue `telematics_work_queue.crash-detection-group`
+- RabbitMQ accident output: queue `vehicle-events.vehicle-events-group`
+- HDFS sink:
+  - `hdfs.namenodeUri = hdfs://namenode:8020`
+  - `hdfs.outputPath = /insurance-megacorp/telemetry-data-v2`
 
 ## 9. Versions
 
@@ -136,62 +120,65 @@
 - Maven Wrapper: included (`./mvnw`)
 - Note: No `versions.txt` currently. If introduced, align POM versions accordingly.
 
-## 10. Performance & Deployment
+## 10. Deployment
 
-- Throughput: tens of events/sec (demo)
-- Trigger: recommend micro-batch trigger of 2s; no watermarking
-- HDFS: small test cluster; partition by date only; write as `hdfs` user (no Kerberos)
-- Deployment: Spark runs on separate server/cluster; pass master and endpoints via `spark-processor.conf`; package uber-jar with Spark deps provided
+- SCDF runs in Cloud Foundry; apps registered via imc-stream-manager
+- Network: CF apps require egress to RabbitMQ and HDFS endpoints
+- HDFS: partition by date only; write as `hdfs` user (no Kerberos)
 
-## 11. Development Plan Checklist
+## Notes
 
-Phase A: Baseline and versions
-- [x] Update Spark module to Spark 4.0 (Scala 2.13), Java 21 in POM
-- [x] Add shaded/assembly packaging for Spark job (provided Spark deps)
-- [x] Verify root build of both modules
+General documentation can live here. The plan section below is specifically parsed by `dbplan`.
 
-Phase B: Config templates
-- [x] Add `spark-processor.conf.template` with Rabbit, HDFS, Greenplum, trigger settings
-- [x] Document local `spark-processor.conf` (untracked) and env var overrides
-- [x] Add connector consumer `auto-startup` toggle in templates
+<!-- devplan:start -->
+## Development Plan
 
-Phase C: Spark ingestion
-- [x] Implement Rabbit ingestion in Spark (RabbitMQ Java client-based receiver)
-- [x] Make Rabbit credentials and queue configurable
-- [ ] Integration test with local Rabbit (docker-compose)
-  - [x] Add local Rabbit docker-compose service
-  - [x] Add smoke test script (`scripts/local_smoke_test.sh`) to seed queues and run both apps
-  - [ ] Verify accident publish and Spark processing end-to-end locally
-  - [x] Add local Rabbit docker-compose service
-  - [ ] Smoke test connector → telematics_raw_for_spark
-  - [ ] Smoke test Spark read → HDFS/accidents publish
+## Phase: Telemetry Processor
+- [X] Implement functions: forward all events to HDFS branch; accidentsOut for g_force > 5.0
+- [X] Configure bindings for input and dual outputs (input queue, HDFS sink channel, vehicle-events)
+- [ ] Robust JSON handling: tolerate enhanced and legacy shapes; null-safe accessors
+- [ ] Validation: drop/log malformed payloads; include truncated sample in logs
+- [ ] Error handling: backoff and DLQ configuration; document retry policy
+- [ ] Metrics hooks: count total, accidents, invalid messages (Micrometer)
+- [ ] Unit tests: g_force thresholds, missing fields, malformed JSON
+- [ ] Integration test: end-to-end with embedded broker (testbinder) verifying dual-output routing
+- [ ] Configurability: thresholds via env; content-type enforcement
 
-Phase D: Flattening and schema
-- [x] Implement JSON flattening for enhanced schema; support legacy fields
-- [ ] Define canonical columns/types; add unit tests
+## Phase: HDFS Sink
+- [X] Write Parquet with minimal schema (raw_json) and SNAPPY compression
+- [X] Partition output by date in HDFS path
+- [ ] Hadoop client configuration: namenode URI, timeouts, buffers
+- [ ] File rolling policy: size/time thresholds; safe writer close on shutdown
+- [ ] Retry/Idempotency: handle transient HDFS errors, avoid duplicate files
+- [ ] Performance tuning: configurable write buffer size, batch size
+- [ ] Kerberos readiness: optional JAAS path (disabled by default)
+- [ ] Metrics: files written, bytes written, failures
+- [ ] Validate HDFS connection/permissions in target environment
 
-Phase E: Accident detection and outputs
-- [x] Implement `g_force > 5.0` rule
-- [x] Write accidents to Greenplum via PostgreSQL JDBC (compatible with Greenplum)
-- [x] Publish accidents to Rabbit `vehicle-events`
+## Phase: Stream Manager
+- [X] Add functions (utilities, config/global+per-stream, auth, app registration via GitHub, streams)
+- [X] Interactive menu with color/icons; global and per-stream operations
+- [X] Global config.yml, per-stream config-<name>.yml, streams-index.yml
+- [ ] Stream CRUD UX: create, edit, delete stream configs; rename stream
+- [ ] Validation: verify GitHub URLs resolve to release JARs; fallback tag prompt
+- [ ] Operations: register/unregister default apps; register custom app by GitHub URL
+- [ ] Status: show stream deployments with colorized state; undeploy/deploy actions
+- [ ] Non-interactive flags: NO_PROMPT, DEBUG; exit codes for CI usage
+- [ ] README runbook for usage and env vars (TOKEN, SCDF_CLIENT_ID/SECRET)
 
-Phase F: HDFS Parquet sink
-- [x] Write all flattened records to Parquet at `/insurance-megacorp/telemetry-data-v2/date=__HIVE_DEFAULT_PARTITION__`
-- [x] Configure checkpointing, rollover, and partitioning by date only
-  - Note: Local smoke test uses `/insurance-megacorp/telemetry-test` output path
+## Phase: SCDF Integration
+- [ ] Register apps in SCDF (processor, sink) using manager
+- [ ] Create and deploy single fan-out stream; verify status transitions
+- [ ] End-to-end validation with sample telemetry (accident + non-accident)
+- [ ] Troubleshooting: capture SCDF error responses; suggest remediation
 
-Phase G: Observability and ops
-- [x] Standard logging for both modules
-- [ ] Basic health/readiness notes for connector
-
-Phase H: Packaging and deployment
-- [ ] Build Spark uber-jar; document spark-submit with `--properties-file`/conf
-- [ ] Update README with runbooks
-
-Phase I: Demo validation
-- [ ] Run `imc-telematics-gen` to generate events
-- [ ] End-to-end verification: Rabbit → Spark → HDFS + GP + Rabbit accidents
-- [ ] Document gotchas
+## Phase: Documentation & Ops
+- [ ] Health/readiness notes and logging guidance (levels, DLQ, retries)
+- [ ] README: module runbooks and SCDF registration/stream creation guides
+- [ ] Config references: templates overview and required env vars
+- [ ] Gotchas: Rabbit queue/group patterns, HDFS partitions, message sizes
+- [ ] Finalize PROJECT docs; add roadmap
+<!-- devplan:end -->
 
 ## 12. Security & Observability
 

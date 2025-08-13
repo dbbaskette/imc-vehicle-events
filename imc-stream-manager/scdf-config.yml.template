@@ -1,0 +1,18 @@
+# SCDF Telemetry Stream Configuration (template)
+# Copy to scdf-config.yml and edit values.
+
+scdf:
+  url: "https://dataflow.example.com"
+  token_url: "https://login.example.com/oauth/token"
+
+apps:
+  telemetryProcessor:
+    type: processor
+    github_url: "https://github.com/your-org/imc-telemetry-processor"
+  hdfsSink:
+    type: sink
+    github_url: "https://github.com/your-org/imc-hdfs-sink"
+
+stream:
+  name: "imc-telemetry-stream"
+  definition: "rabbit --queues=telematics_work_queue.crash-detection-group | imc-telemetry-processor | ( :rabbit --routingKey=vehicle-events.vehicle-events-group & imc-hdfs-sink )"

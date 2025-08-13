@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: imc-telemetry-processor
+  cloud:
+    function:
+      definition: ${FUNCTION_DEFINITION:processTelemetry;accidentsOut}
+    stream:
+      bindings:
+        processTelemetry-in-0:
+          destination: ${TELEMETRY_INPUT_QUEUE:telematics_work_queue}
+          group: ${TELEMETRY_INPUT_GROUP:crash-detection-group}
+          content-type: application/json
+        processTelemetry-out-0:
+          destination: ${HDFS_SINK_DESTINATION:telemetry-hdfs-sink}
+          content-type: application/json
+        accidentsOut-out-0:
+          destination: ${ACCIDENTS_OUTPUT_QUEUE:vehicle-events}
+          content-type: application/json
+      rabbit:
+        bindings:
+          processTelemetry-in-0:
+            consumer:
+              auto-bind-dlq: true
+              durable-subscription: true
+              max-attempts: 3

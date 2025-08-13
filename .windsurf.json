@@ -1,5 +1,0 @@
-{
-  "prompts": [ "PROJECT.md", "prompt/_base/core_prompt.md", "prompt/spring_boot_service/spring_prompt.md" ],
-  "tags": ["imc-vehicle-events"],
-  "autoExpand": true
-}
