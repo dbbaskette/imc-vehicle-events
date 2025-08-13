@@ -1,13 +1,11 @@
 ---
 applications:
-- name: imc-vehicle-events
+- name: imc-rabbit-spark-connector
   memory: 1G
   instances: 1
-   # Java Application Settings
-  # Using the offline Java buildpack for Tanzu Cloud Foundry
   buildpacks:
     - java_buildpack_offline
-  path: target/imc-vehicle-events-1.0.0-SNAPSHOT.jar
+  path: imc-rabbit-spark-connector/target/imc-rabbit-spark-connector-1.0.0-SNAPSHOT.jar
   env:
     SPRING_PROFILES_ACTIVE: cloud
     JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 21.+ } }'

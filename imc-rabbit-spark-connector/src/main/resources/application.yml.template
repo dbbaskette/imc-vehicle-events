@@ -1,22 +1,20 @@
 spring:
   application:
-    name: imc-vehicle-events
-  
+    name: imc-rabbit-spark-connector
   cloud:
     stream:
       bindings:
-        consumeTelematicsData-in-0:
+        consumeRawTelematics-in-0:
           destination: telematics_work_queue
           group: crash-detection-group
           content-type: application/json
       rabbit:
         bindings:
-          consumeTelematicsData-in-0:
+          consumeRawTelematics-in-0:
             consumer:
               auto-bind-dlq: true
               durable-subscription: true
               max-attempts: 3
-  
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -24,12 +22,11 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
 
-server:
-  port: ${SERVER_PORT:8080}
-
 logging:
   level:
-    com.insurancemegacorp.vehicleevents: ${LOG_LEVEL:INFO}
-    org.springframework.cloud.stream: ${STREAM_LOG_LEVEL:DEBUG}
+    com.insurancemegacorp.rabbitsparkcon: ${LOG_LEVEL:INFO}
+    org.springframework.cloud.stream: ${STREAM_LOG_LEVEL:INFO}
   pattern:
     console: '%d{yyyy-MM-dd HH:mm:ss} - %msg%n'
+
+

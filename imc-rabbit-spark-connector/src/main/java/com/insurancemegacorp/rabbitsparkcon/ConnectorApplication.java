@@ -1,12 +1,13 @@
-package com.insurancemegacorp.vehicleevents;
+package com.insurancemegacorp.rabbitsparkcon;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class TelematicsConsumerApplication {
-
+public class ConnectorApplication {
     public static void main(String[] args) {
-        SpringApplication.run(TelematicsConsumerApplication.class, args);
+        SpringApplication.run(ConnectorApplication.class, args);
     }
 }
+
+

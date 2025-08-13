@@ -1,14 +1,14 @@
-# IMC Vehicle Events
+# IMC Rabbit + Spark Suite
 
-A Spring Cloud Stream application that consumes vehicle telemetry data from RabbitMQ and detects crash events.
+Multi-module project containing:
+- `imc-rabbit-spark-connector`: Spring Cloud Stream Rabbit connector that consumes raw telemetry JSON.
+- `imc-spark-processor`: Spark processor (stub) for flattening and analytics.
 
-## Features
+## Connector Responsibilities
 
-- Consumes vehicle telemetry data from RabbitMQ queue `telematics_work_queue` with consumer group `crash-detection-group`
-- Detects crash events based on G-force threshold (>5.0) or event type "CRASH"
-- Separate handling for crash events vs normal telemetry data
-- Dead letter queue support for failed message processing
-- Configurable for both local development and Cloud Foundry deployment
+- Consume raw telemetry JSON from RabbitMQ queue `telematics_work_queue` (group `crash-detection-group`).
+- Do not transform/process payloads; Spark will handle flattening and analytics.
+- Provide basic DLQ and consumer settings via templates.
 
 ## Prerequisites
 
@@ -16,24 +16,17 @@ A Spring Cloud Stream application that consumes vehicle telemetry data from Rabb
 - Maven 3.6+
 - RabbitMQ (for local development)
 
-## Setup
+## Connector Properties
 
-### 1. Configure Application Properties
-
-Copy the template files and configure them for your environment:
+Templates live in `imc-rabbit-spark-connector/src/main/resources/`:
 
 ```bash
-# For local development
-cp src/main/resources/application.yml.template src/main/resources/application.yml
-
-# For cloud deployment  
-cp src/main/resources/application-cloud.yml.template src/main/resources/application-cloud.yml
-
-# For tunnel development
-cp src/main/resources/application-tunnel.yml.template src/main/resources/application-tunnel.yml
+cd imc-rabbit-spark-connector/src/main/resources
+cp application.yml.template application.yml
+cp application-cloud.yml.template application-cloud.yml
+cp application-tunnel.yml.template application-tunnel.yml
 ```
-
-Edit the copied files to set your specific RabbitMQ connection details.
+Adjust `RABBITMQ_*` env vars and binding names as needed.
 
 ### 2. Build the Application
 
@@ -45,21 +38,32 @@ Edit the copied files to set your specific RabbitMQ connection details.
 mvn clean package
 ```
 
-## Running the Application
+## Building
+
+From the repo root:
+
+```bash
+./mvnw -q -DskipTests package
+```
+
+## Running the Connector
 
 ### Local Development
 ```bash
-./run.sh
+cd imc-rabbit-spark-connector
+../mvnw spring-boot:run
 ```
 
 ### With Cloud Profile
 ```bash
-./run.sh --cloud
+cd imc-rabbit-spark-connector
+../mvnw spring-boot:run -Dspring-boot.run.profiles=cloud
 ```
 
 ### With Tunnel Profile
 ```bash
-./run.sh --tunnel
+cd imc-rabbit-spark-connector
+../mvnw spring-boot:run -Dspring-boot.run.profiles=tunnel
 ```
 
 ### Cloud Foundry Deployment
@@ -70,29 +74,59 @@ cf push -f manifest.yml
 
 ## Message Format
 
-The consumer expects JSON messages with the following structure:
+Enhanced telemetry message structure (source: `imc-telematics-gen`):
 
 ```json
 {
-  "vehicle_id": "string",
-  "timestamp": "2023-01-01T12:00:00",
-  "speed": 65.5,
-  "acceleration": 2.3,
-  "g_force": 1.2,
-  "latitude": 40.7128,
-  "longitude": -74.0060,
-  "heading": 180.0,
-  "event_type": "NORMAL"
+  "policy_id": 200018,
+  "vehicle_id": 300021,
+  "vin": "1HGBH41JXMN109186",
+  "timestamp": "2024-01-15T10:30:45.123Z",
+  "speed_mph": 32.5,
+  "current_street": "Peachtree Street",
+  "g_force": 1.18,
+  "sensors": {
+    "gps": {
+      "latitude": 33.7701,
+      "longitude": -84.3876,
+      "altitude": 351.59,
+      "speed_ms": 14.5,
+      "bearing": 148.37,
+      "accuracy": 2.64,
+      "satellite_count": 11,
+      "gps_fix_time": 150
+    },
+    "accelerometer": {
+      "x": 0.1234,
+      "y": -0.0567,
+      "z": 0.9876
+    },
+    "gyroscope": {
+      "pitch": 0.02,
+      "roll": -0.01,
+      "yaw": 0.15
+    },
+    "magnetometer": {
+      "x": 25.74,
+      "y": -8.73,
+      "z": 40.51,
+      "heading": 148.37
+    },
+    "barometric_pressure": 1013.25,
+    "device": {
+      "battery_level": 82.0,
+      "signal_strength": -63,
+      "orientation": "portrait",
+      "screen_on": false,
+      "charging": true
+    }
+  }
 }
 ```
 
-## Crash Detection
+## Spark Processor
 
-Crash events are detected when:
-- G-force > 5.0 G
-- Event type is "CRASH"
-
-When a crash is detected, the application logs detailed crash information including location and vehicle dynamics.
+- Stub module `imc-spark-processor` targets Java 17; implement Structured Streaming to flatten and process the raw JSON.
 
 ## Configuration Templates
 

@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: imc-rabbit-spark-connector
+  cloud:
+    stream:
+      bindings:
+        consumeRawTelematics-in-0:
+          destination: telematics_work_queue
+          group: crash-detection-group
+          content-type: application/json
+      rabbit:
+        bindings:
+          consumeRawTelematics-in-0:
+            consumer:
+              auto-bind-dlq: true
+              durable-subscription: true
+              max-attempts: 2
+              recovery-interval: 5000
+
+logging:
+  level:
+    com.insurancemegacorp.rabbitsparkcon: ${LOG_LEVEL:INFO}
+    org.springframework.cloud.stream: ${STREAM_LOG_LEVEL:INFO}
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss} - %msg%n'
+
+
