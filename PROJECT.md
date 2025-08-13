@@ -156,25 +156,25 @@ Phase B: Config templates
 - [x] Add connector consumer `auto-startup` toggle in templates
 
 Phase C: Spark ingestion
-- [ ] Implement Rabbit ingestion in Spark (RabbitMQ Java client-based receiver)
-- [ ] Make Rabbit credentials and queue configurable
+- [x] Implement Rabbit ingestion in Spark (RabbitMQ Java client-based receiver)
+- [x] Make Rabbit credentials and queue configurable
 - [ ] Integration test with local Rabbit (docker-compose)
 
 Phase D: Flattening and schema
-- [ ] Implement JSON flattening for enhanced schema; support legacy fields
+- [x] Implement JSON flattening for enhanced schema; support legacy fields
 - [ ] Define canonical columns/types; add unit tests
 
 Phase E: Accident detection and outputs
-- [ ] Implement `g_force > 5.0` rule
-- [ ] Write accidents to Greenplum via Greenplum Spark Connector (external packaged software)
-- [ ] Publish accidents to Rabbit `vehicle-events`
+- [x] Implement `g_force > 5.0` rule
+- [x] Write accidents to Greenplum via PostgreSQL JDBC (compatible with Greenplum)
+- [x] Publish accidents to Rabbit `vehicle-events`
 
 Phase F: HDFS Parquet sink
-- [ ] Write all flattened records to Parquet at `/insurance-megacorp/telemetry-data-v2/date=__HIVE_DEFAULT_PARTITION__`
-- [ ] Configure checkpointing, rollover, and partitioning by date only
+- [x] Write all flattened records to Parquet at `/insurance-megacorp/telemetry-data-v2/date=__HIVE_DEFAULT_PARTITION__`
+- [x] Configure checkpointing, rollover, and partitioning by date only
 
 Phase G: Observability and ops
-- [ ] Standard logging for both modules
+- [x] Standard logging for both modules
 - [ ] Basic health/readiness notes for connector
 
 Phase H: Packaging and deployment

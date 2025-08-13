@@ -10,8 +10,8 @@ rabbit.uri = amqp://<username>:<password>@<rabbit-host>:5672/<vhost>
 rabbit.inputQueue = telematics_raw_for_spark
 
 # Publish accidents for consumers on vehicle-events
-rabbit.vehicleEventsExchange = vehicle-events
-rabbit.vehicleEventsGroup = vehicle-events-group
+# Publish accidents to a queue (default exchange with routing key = queue name)
+rabbit.vehicleEventsQueue = vehicle-events
 
 hdfs.namenodeUri = hdfs://namenode:8020
 hdfs.outputPath = /insurance-megacorp/telemetry-data-v2
