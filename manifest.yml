@@ -1,0 +1,15 @@
+---
+applications:
+- name: imc-vehicle-events
+  memory: 1G
+  instances: 1
+   # Java Application Settings
+  # Using the offline Java buildpack for Tanzu Cloud Foundry
+  buildpacks:
+    - java_buildpack_offline
+  path: target/imc-vehicle-events-1.0.0-SNAPSHOT.jar
+  env:
+    SPRING_PROFILES_ACTIVE: cloud
+    JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 21.+ } }'
+  services:
+    - messaging-c856b29a-1c7e-4fd5-ab3b-0633b90869cc

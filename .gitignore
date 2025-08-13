@@ -1,0 +1,81 @@
+# Compiled class files
+*.class
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Log file
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs, see http://www.oracle.com/technetwork/java/javase/crashes/
+hs_err_pid*
+replay_pid*
+
+# IDE specific files
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application configuration files with secrets
+src/main/resources/application.yml
+src/main/resources/application-*.yml
+!src/main/resources/application*.yml.template
+
+# Spring Boot
+.apt_generated
+.apt_generated_tests
+.factorypath
+.sts4-cache
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Gradle
+.gradle/
+
+# Environment variables
+.env
+.env.local
+
+# Cloud Foundry
+manifest-local.yml
