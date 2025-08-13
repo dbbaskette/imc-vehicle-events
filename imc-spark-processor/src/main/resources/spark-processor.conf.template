@@ -11,7 +11,7 @@ rabbit.inputQueue = telematics_raw_for_spark
 
 # Publish accidents for consumers on vehicle-events
 # Publish accidents to a queue (default exchange with routing key = queue name)
-rabbit.vehicleEventsQueue = vehicle-events
+rabbit.vehicleEventsQueue = vehicle-events.vehicle-events-group
 
 hdfs.namenodeUri = hdfs://namenode:8020
 hdfs.outputPath = /insurance-megacorp/telemetry-data-v2

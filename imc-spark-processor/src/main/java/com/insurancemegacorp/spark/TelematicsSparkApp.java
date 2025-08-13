@@ -41,7 +41,7 @@ public class TelematicsSparkApp {
 
         String rabbitUri = conf.getProperty("rabbit.uri");
         String inputQueue = conf.getProperty("rabbit.inputQueue", "telematics_raw_for_spark");
-        String vehicleEventsQueue = conf.getProperty("rabbit.vehicleEventsQueue", "vehicle-events");
+        String vehicleEventsQueue = conf.getProperty("rabbit.vehicleEventsQueue", "vehicle-events.vehicle-events-group");
         String vehicleEventsGroup = conf.getProperty("rabbit.vehicleEventsGroup", "vehicle-events-group");
 
         String hdfsUri = conf.getProperty("hdfs.namenodeUri");
