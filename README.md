@@ -1,14 +1,9 @@
-# IMC Rabbit + Spark Suite
+# IMC Telemetry Stream (SCDF)
 
 Multi-module project containing:
-- `imc-rabbit-spark-connector`: Spring Cloud Stream Rabbit connector that consumes raw telemetry JSON.
-- `imc-spark-processor`: Spark processor (stub) for flattening and analytics.
-
-## Connector Responsibilities
-
-- Consume raw telemetry JSON from RabbitMQ queue `telematics_work_queue` (group `crash-detection-group`).
-- Do not transform/process payloads; Spark will handle flattening and analytics.
-- Provide basic DLQ and consumer settings via templates.
+- `imc-telemetry-processor`: Spring Cloud Stream processor that taps telemetry, flattens JSON, and emits vehicle events to `vehicle-events`.
+- `imc-hdfs-sink`: Spring Cloud Stream sink that writes telemetry JSON to HDFS as Parquet (partitioned by date).
+- `imc-stream-manager`: SCDF stream manager scripts and configs.
 
 ## Prerequisites
 
@@ -16,17 +11,21 @@ Multi-module project containing:
 - Maven 3.6+
 - RabbitMQ (for local development)
 
-## Connector Properties
+## App Templates
 
-Templates live in `imc-rabbit-spark-connector/src/main/resources/`:
-
+Telemetry Processor:
 ```bash
-cd imc-rabbit-spark-connector/src/main/resources
+cd imc-telemetry-processor/src/main/resources
 cp application.yml.template application.yml
-cp application-cloud.yml.template application-cloud.yml
-cp application-tunnel.yml.template application-tunnel.yml
+# Configure TELEMETRY_INPUT_QUEUE, TELEMETRY_INPUT_GROUP, VEHICLE_EVENTS_OUTPUT_QUEUE, VEHICLE_EVENT_GFORCE_THRESHOLD
 ```
-Adjust `RABBITMQ_*` env vars and binding names as needed.
+
+HDFS Sink:
+```bash
+cd imc-hdfs-sink/src/main/resources
+cp application.yml.template application.yml
+# Configure HDFS_NAMENODE_URI and HDFS_OUTPUT_PATH
+```
 
 ### Local RabbitMQ (docker-compose)
 
@@ -35,7 +34,7 @@ docker compose up -d rabbitmq
 # UI: http://localhost:15672 (guest/guest)
 ```
 
-### 2. Build the Application
+### Build the Applications
 
 ```bash
 # Using Maven wrapper (recommended)
@@ -45,38 +44,18 @@ docker compose up -d rabbitmq
 mvn clean package
 ```
 
-## Building
-
-From the repo root:
+## Stream Manager
 
 ```bash
-./mvnw -q -DskipTests package
-```
+cd imc-stream-manager
+cp scdf-config.yaml.template scdf-config.yml  # or use global config.yml and per-stream configs
+# Edit SCDF endpoints and app GitHub URLs
 
-## Running the Connector
+# Interactive manager
+bash stream-manager.sh
 
-### Local Development
-```bash
-cd imc-rabbit-spark-connector
-../mvnw spring-boot:run
-```
-
-### With Cloud Profile
-```bash
-cd imc-rabbit-spark-connector
-../mvnw spring-boot:run -Dspring-boot.run.profiles=cloud
-```
-
-### With Tunnel Profile
-```bash
-cd imc-rabbit-spark-connector
-../mvnw spring-boot:run -Dspring-boot.run.profiles=tunnel
-```
-
-### Cloud Foundry Deployment
-```bash
-./mvnw clean package
-cf push -f manifest.yml
+# Non-interactive
+NO_PROMPT=true TOKEN=... bash stream-manager.sh
 ```
 
 ## Message Format
@@ -131,16 +110,19 @@ Enhanced telemetry message structure (source: `imc-telematics-gen`):
 }
 ```
 
-## Spark Processor
+## Actuator Metrics
 
-- Stub module `imc-spark-processor` targets Java 17; implement Structured Streaming to flatten and process the raw JSON.
+Both apps expose actuator endpoints (health, info, metrics). Example queries:
+
+- List metrics: `GET /actuator/metrics`
+- Tapped message count: `GET /actuator/metrics/telemetry_messages_total`
+- Vehicle events count: `GET /actuator/metrics/telemetry_vehicle_events_total`
+- Invalid messages count: `GET /actuator/metrics/telemetry_invalid_messages_total`
 
 ## Configuration Templates
 
-The application uses template files for configuration:
+- Telemetry processor: `imc-telemetry-processor/src/main/resources/application.yml.template`
+- HDFS sink: `imc-hdfs-sink/src/main/resources/application.yml.template`
+- Stream manager: `imc-stream-manager/scdf-config.yaml.template` (copy to `config.yml` and create per-stream `config-<name>.yml` as needed)
 
-- `application.yml.template` - Local development with environment variable defaults
-- `application-cloud.yml.template` - Cloud Foundry deployment configuration
-- `application-tunnel.yml.template` - SSH tunnel configuration for development
-
-These templates use environment variables for sensitive configuration values. The actual `application*.yml` files are ignored by git to prevent accidentally committing secrets.
+These templates use environment variables for sensitive configuration values. The actual `*.yml` files are ignored by git to prevent accidentally committing secrets.
