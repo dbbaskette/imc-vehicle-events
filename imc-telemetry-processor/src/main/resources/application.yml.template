@@ -7,16 +7,17 @@ spring:
     stream:
       bindings:
         vehicleEventsOut-in-0:
-          destination: ${TELEMETRY_INPUT_QUEUE:telematics_work_queue}
+          destination: ${TELEMETRY_INPUT_EXCHANGE:telematics_work_queue}
           group: ${TELEMETRY_INPUT_GROUP:crash-detection-group}
           content-type: application/json
         vehicleEventsOut-out-0:
-          destination: ${VEHICLE_EVENTS_OUTPUT_QUEUE:vehicle-events.vehicle-events-group}
+          destination: ${VEHICLE_EVENTS_OUTPUT_EXCHANGE:vehicle_events}
           content-type: application/json
       rabbit:
         bindings:
           vehicleEventsOut-in-0:
             consumer:
+              exchangeType: ${TELEMETRY_INPUT_EXCHANGE_TYPE:direct}
               auto-bind-dlq: true
               durable-subscription: true
               max-attempts: 3

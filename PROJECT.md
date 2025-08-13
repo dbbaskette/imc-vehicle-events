@@ -139,10 +139,12 @@ General documentation can live here. The plan section below is specifically pars
 - [X] Robust JSON handling: flatten enhanced schema; null-safe accessors for nested fields
 - [X] Validation: log and drop malformed payloads
 - [X] Error handling: DLQ enabled via consumer properties; base retry policy in template
-- [X] Metrics hooks: count total (tapped) messages via Micrometer
+- [X] Metrics: Micrometer counters for total, vehicle events, invalid
 - [ ] Unit tests: g_force thresholds, missing fields, malformed JSON
 - [ ] Integration test: end-to-end with embedded broker (testbinder)
 - [X] Configurability: threshold via env; content-type header on outputs
+- [X] Local smoke test: Docker RabbitMQ, declare topology, publish sample, verify queue counts (non-consuming)
+- [X] Operator UX: wait-loop for message arrival and optional Rabbit UI pause
 
 ## Phase: HDFS Sink
 - [X] Write Parquet with minimal schema (raw_json) and SNAPPY compression
@@ -167,6 +169,7 @@ General documentation can live here. The plan section below is specifically pars
 - [ ] README runbook for usage and env vars (TOKEN, SCDF_CLIENT_ID/SECRET)
 
 ## Phase: SCDF Integration
+- [X] Processor app is SCDF-ready (function definition and bindings)
 - [ ] Register apps in SCDF (processor, sink) using manager
 - [ ] Create and deploy single fan-out stream; verify status transitions
 - [ ] End-to-end validation with sample telemetry (vehicle_event + non-event)
