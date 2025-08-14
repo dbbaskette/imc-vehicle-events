@@ -46,16 +46,109 @@ mvn clean package
 
 ## Stream Manager
 
+### Configuration Structure
+
+**`config.yml`** - Global SCDF settings + environment defaults
+- SCDF server URL and OAuth endpoints  
+- Default HDFS and version settings
+- Shared across all stream operations
+- RabbitMQ auto-configured by Cloud Foundry service bindings
+
+**`stream-configs/`** - Directory containing stream-specific configurations
+- `telemetry-streams.yml` - Telemetry processing streams configuration
+- Each file contains app definitions, stream definitions, and deployment properties
+- Follows SCDF-RAG pattern with comprehensive deployment settings
+
+### Usage
+
 ```bash
 cd imc-stream-manager
-cp scdf-config.yaml.template scdf-config.yml  # or use global config.yml and per-stream configs
-# Edit SCDF endpoints and app GitHub URLs
+
+# Edit global settings
+vi config.yml
 
 # Interactive manager
 bash stream-manager.sh
 
-# Non-interactive
+# Menu options:
+# 1) Register default apps (global)
+# 2) Create a new stream config
+#    - Telemetry Streams (tap-based architecture) 
+#    - Custom Stream
+# 3) List configured streams  
+# 4) Manage an existing stream
+# 5) Deploy Streams (general deployment from stream-configs/)
+# 6) Register custom app by GitHub URL
+
+# Non-interactive mode
 NO_PROMPT=true TOKEN=... bash stream-manager.sh
+```
+
+## SCDF Integration
+
+### Stream Architecture
+
+The system implements a **tap-based architecture** for efficient telemetry processing:
+
+#### Main Stream: `telemetry-to-hdfs`
+```bash
+# All telemetry data flows to HDFS for long-term storage
+rabbit --queues=telematics_work_queue --groups=crash-detection-group | imc-hdfs-sink
+```
+
+#### Tap Stream: `accident-detection`  
+```bash
+# Only accident events (g_force > threshold) flow to vehicle-events queue
+:telemetry-to-hdfs.rabbit > imc-telemetry-processor | rabbit --queues=vehicle_events --groups=vehicle-events-group
+```
+
+### Deployment Steps
+
+1. **Register Applications**:
+   ```bash
+   cd imc-stream-manager
+   ./stream-manager.sh
+   # Select: Register Applications → Custom GitHub Apps
+   ```
+
+2. **Create Streams**:
+   ```bash
+   # Create main storage stream
+   stream create telemetry-to-hdfs --definition "rabbit --queues=telematics_work_queue --groups=crash-detection-group | imc-hdfs-sink"
+   
+   # Create accident detection tap
+   stream create accident-detection --definition ":telemetry-to-hdfs.rabbit > imc-telemetry-processor | rabbit --queues=vehicle_events --groups=vehicle-events-group"
+   ```
+
+3. **Deploy Streams**:
+   ```bash
+   stream deploy telemetry-to-hdfs
+   stream deploy accident-detection
+   ```
+
+4. **Monitor**:
+   - **SCDF UI**: Stream status, metrics, logs
+   - **RabbitMQ UI**: Queue depths, message rates  
+   - **Actuator Endpoints**: Application health and custom metrics
+
+### Data Flow
+
+```
+External Telemetry Generator
+           ↓
+   telematics_work_queue
+           ↓
+    ┌─────────────────┐
+    │ Main Stream     │ → HDFS (all telemetry)
+    │ telemetry-to-   │
+    │ hdfs            │
+    └─────────────────┘
+           ↓ (tap)
+    ┌─────────────────┐
+    │ Tap Stream      │ → vehicle_events (accidents only)
+    │ accident-       │
+    │ detection       │
+    └─────────────────┘
 ```
 
 ## Message Format
@@ -123,6 +216,8 @@ Both apps expose actuator endpoints (health, info, metrics). Example queries:
 
 - Telemetry processor: `imc-telemetry-processor/src/main/resources/application.yml.template`
 - HDFS sink: `imc-hdfs-sink/src/main/resources/application.yml.template`
-- Stream manager: `imc-stream-manager/scdf-config.yaml.template` (copy to `config.yml` and create per-stream `config-<name>.yml` as needed)
+- Stream manager: 
+  - `imc-stream-manager/config.yml` - Global SCDF and environment settings
+  - `imc-stream-manager/config-<streamname>.yml` - Stream-specific configurations
 
-These templates use environment variables for sensitive configuration values. The actual `*.yml` files are ignored by git to prevent accidentally committing secrets.
+The stream manager uses a unified configuration approach with global settings in `config.yml` and stream-specific settings in `config-<streamname>.yml` files.

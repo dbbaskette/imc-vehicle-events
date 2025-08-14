@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.security.UserGroupInformation;
 
 @Component
-public class HdfsSink {
+public class HdfsSink implements Consumer<byte[]> {
     private static final Logger log = LoggerFactory.getLogger(HdfsSink.class);
     
     private final MeterRegistry meterRegistry;
@@ -165,26 +165,25 @@ public class HdfsSink {
         scheduler.scheduleAtFixedRate(this::checkFileRolling, 0, 1, TimeUnit.MINUTES);
     }
     
-    @Bean
-    public Consumer<byte[]> writeToHdfs() {
-        return payload -> {
-            Timer.Sample sample = Timer.start(meterRegistry);
-            try {
-                String jsonMessage = new String(payload, StandardCharsets.UTF_8);
-                messageQueue.offer(jsonMessage);
-                messagesReceived.incrementAndGet();
-                meterRegistry.counter("hdfs_messages_received_total").increment();
-                sample.stop(Timer.builder("hdfs_message_processing_duration")
-                    .description("Time taken to queue message for HDFS processing")
-                    .register(meterRegistry));
-            } catch (Exception e) {
-                log.error("Failed to queue message for HDFS processing", e);
-                meterRegistry.counter("hdfs_message_queue_failures_total").increment();
-                sample.stop(Timer.builder("hdfs_message_processing_duration")
-                    .tag("status", "error")
-                    .register(meterRegistry));
-            }
-        };
+    // Implement Consumer<byte[]> interface: accept inbound messages
+    @Override
+    public void accept(byte[] payload) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            String jsonMessage = new String(payload, StandardCharsets.UTF_8);
+            messageQueue.offer(jsonMessage);
+            messagesReceived.incrementAndGet();
+            meterRegistry.counter("hdfs_messages_received_total").increment();
+            sample.stop(Timer.builder("hdfs_message_processing_duration")
+                .description("Time taken to queue message for HDFS processing")
+                .register(meterRegistry));
+        } catch (Exception e) {
+            log.error("Failed to queue message for HDFS processing", e);
+            meterRegistry.counter("hdfs_message_queue_failures_total").increment();
+            sample.stop(Timer.builder("hdfs_message_processing_duration")
+                .tag("status", "error")
+                .register(meterRegistry));
+        }
     }
     
     private void processBatch() {
