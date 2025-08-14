@@ -7,7 +7,7 @@ spring:
     stream:
       bindings:
         writeToHdfs-in-0:
-          destination: ${HDFS_SINK_DESTINATION:telemetry-hdfs-sink}
+          destination: ${TELEMETRY_INPUT_EXCHANGE:telematics_work_queue}
           group: ${HDFS_SINK_GROUP:hdfs-sink-group}
           content-type: application/json
       rabbit:
@@ -18,8 +18,24 @@ spring:
               durable-subscription: true
               max-attempts: 3
 hdfs:
-  namenodeUri: ${HDFS_NAMENODE_URI}
-  outputPath: ${HDFS_OUTPUT_PATH}
+  namenodeUri: ${HDFS_NAMENODE_URI:hdfs://namenode:8020}
+  outputPath: ${HDFS_OUTPUT_PATH:/insurance-megacorp/telemetry-data-v2}
+  user: ${HDFS_USER:hdfs}
+  client:
+    timeout: ${HDFS_CLIENT_TIMEOUT:60000}
+    retries: ${HDFS_CLIENT_RETRIES:3}
+    retryInterval: ${HDFS_CLIENT_RETRY_INTERVAL:5000}
+  file:
+    maxSizeMB: ${HDFS_FILE_MAX_SIZE_MB:256}
+    maxAgeMinutes: ${HDFS_FILE_MAX_AGE_MINUTES:60}
+    maxMessages: ${HDFS_FILE_MAX_MESSAGES:10000}
+  batch:
+    size: ${HDFS_BATCH_SIZE:100}
+    timeoutSeconds: ${HDFS_BATCH_TIMEOUT_SECONDS:30}
+  kerberos:
+    enabled: ${HDFS_KERBEROS_ENABLED:false}
+    principal: ${HDFS_KERBEROS_PRINCIPAL:}
+    keytab: ${HDFS_KERBEROS_KEYTAB:}
 management:
   endpoints:
     web:

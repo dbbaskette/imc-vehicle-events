@@ -188,4 +188,100 @@ General documentation can live here. The plan section below is specifically pars
 - Secrets via environment variables; no secret manager integration
 - Standard logging; no additional metrics/JMX required
 
+## 13. SCDF Stream Architecture Options
+
+### **Stream Topology Overview**
+The system requires a fan-out pattern where:
+- **ALL telemetry messages** → HDFS (historical storage)
+- **ONLY accident events** (g_force > 5.0) → vehicle-events queue (real-time alerts)
+
+### **Option 1: Tap-Based Architecture (Recommended)**
+
+**Stream Definition:**
+```bash
+# Main stream: All telemetry → HDFS
+telematics-to-hdfs = rabbit --queues=telematics_work_queue | imc-hdfs-sink
+
+# Tap stream: Accidents only → vehicle-events
+accident-detection = :telematics-to-hdfs.rabbit > imc-telemetry-processor | rabbit --queues=vehicle_events
+```
+
+**Benefits:**
+- Clean conceptual model with explicit tap relationship
+- Main stream handles bulk storage, tap handles filtering
+- Easy to understand and maintain in SCDF UI
+- Natural order: storage first, then processing
+
+**Configuration:**
+- HDFS sink: Uses main stream consumer group
+- Telemetry processor: Taps the main stream, different consumer group
+
+### **Option 2: Parallel Consumer Groups (Current Implementation)**
+
+**Stream Definition:**
+```bash
+# Parallel streams with same source
+telematics-to-hdfs = rabbit --queues=telematics_work_queue | imc-hdfs-sink
+accident-detection = rabbit --queues=telematics_work_queue | imc-telemetry-processor | rabbit --queues=vehicle_events
+```
+
+**Benefits:**
+- Both consumers are independent and equal
+- Easier to scale and monitor separately
+- No dependency between the two processing paths
+- Simpler SCDF stream definitions
+
+**Configuration:**
+- HDFS sink: `group=hdfs-sink-group`
+- Telemetry processor: `group=crash-detection-group`
+
+### **Option 3: Source Fanout (Alternative)**
+
+**Stream Definition:**
+```bash
+# Single stream with multiple outputs
+telemetry-fanout = rabbit --queues=telematics_work_queue | bridge --expression=#routing.key | log
+telematics-to-hdfs = :telemetry-fanout > imc-hdfs-sink
+accident-detection = :telemetry-fanout > imc-telemetry-processor | rabbit --queues=vehicle_events
+```
+
+**Benefits:**
+- Explicit fanout at the source level
+- Clear routing visualization in SCDF
+- Can add additional processing branches easily
+
+### **Recommendation: Option 1 (Tap-Based)**
+
+**Rationale:**
+1. **Conceptually accurate**: HDFS storage is the primary concern, accident detection is secondary processing
+2. **Performance optimized**: Main stream optimized for bulk throughput to HDFS
+3. **Operationally clear**: Obvious which is the main data flow vs. derived processing
+4. **SCDF idiomatic**: Uses SCDF tap features as designed
+
+**Implementation Steps:**
+1. Deploy both apps to SCDF as processor and sink
+2. Create main stream: `rabbit → imc-hdfs-sink`
+3. Create tap stream: `:main.rabbit > imc-telemetry-processor → rabbit`
+4. Monitor both streams independently
+
+### **Current Application Configuration**
+
+Both approaches work with current app configurations:
+- HDFS sink binds to `telematics_work_queue` with `hdfs-sink-group`
+- Telemetry processor binds to `telematics_work_queue` with `crash-detection-group`
+- Different consumer groups ensure both receive all messages
+
+**Environment Variables:**
+```bash
+# Shared source
+TELEMETRY_INPUT_EXCHANGE=telematics_work_queue
+
+# HDFS Sink
+HDFS_SINK_GROUP=hdfs-sink-group
+
+# Telemetry Processor  
+TELEMETRY_INPUT_GROUP=crash-detection-group
+VEHICLE_EVENTS_OUTPUT_EXCHANGE=vehicle_events
+```
+
 ## 10. Future Work
