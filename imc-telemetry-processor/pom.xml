@@ -13,7 +13,7 @@
 
     <groupId>com.insurancemegacorp</groupId>
     <artifactId>imc-telemetry-processor</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <name>imc-telemetry-processor</name>
     <description>Spring Cloud Stream processor for telemetry crash detection</description>
 
@@ -52,11 +52,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-stream-test-binder</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
