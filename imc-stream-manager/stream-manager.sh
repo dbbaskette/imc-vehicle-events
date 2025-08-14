@@ -302,15 +302,14 @@ stream_management_submenu() {
     echo -e "${C_BLUE}🔧 Managing: $config_name${C_RESET}"
     
     # Get stream names from config
-    local main_stream_name tap_stream_name
-    main_stream_name=$(yq e '.stream.main_stream.name // ""' "$config_file")
-    tap_stream_name=$(yq e '.stream.tap_stream.name // ""' "$config_file")
+    local stream_names
+    stream_names=$(yq e '.streams[].name' "$config_file")
     
-    if [[ -n "$main_stream_name" ]]; then
-      echo "Main Stream: $main_stream_name"
-    fi
-    if [[ -n "$tap_stream_name" ]]; then
-      echo "Tap Stream: $tap_stream_name"
+    if [[ -n "$stream_names" ]]; then
+        echo "Streams in this configuration:"
+        for name in $stream_names; do
+            echo "  - $name"
+        done
     fi
     
     echo
@@ -327,34 +326,31 @@ stream_management_submenu() {
     case "$sub_choice" in
       1)
         echo -e "${C_YELLOW}Delete Stream(s)${C_RESET}"
-        if [[ -n "$main_stream_name" ]]; then
-          echo "This will delete:"
-          if [[ -n "$tap_stream_name" ]]; then
-            echo "  - Tap stream: $tap_stream_name"
+        if [[ -n "$stream_names" ]]; then
+          echo "This will delete the following streams:"
+          for name in $stream_names; do
+              echo "  - $name"
+          done
+          read -p "Continue? (y/N): " confirm
+          if [[ "$confirm" =~ ^[Yy]$ ]]; then
+            for name in $stream_names; do
+              delete_stream "$name" "$token" "$scdf_url"
+            done
+            echo -e "${C_GREEN}Stream(s) deleted successfully${C_RESET}"
           fi
-          echo "  - Main stream: $main_stream_name"
-        fi
-        read -p "Continue? (y/N): " confirm
-        if [[ "$confirm" =~ ^[Yy]$ ]]; then
-          if [[ -n "$tap_stream_name" ]]; then
-            delete_stream "$tap_stream_name" "$token" "$scdf_url"
-          fi
-          if [[ -n "$main_stream_name" ]]; then
-            delete_stream "$main_stream_name" "$token" "$scdf_url"
-          fi
-          echo -e "${C_GREEN}Stream(s) deleted successfully${C_RESET}"
+        else
+          echo "No streams found in this configuration."
         fi
         ;;
       2)
         echo -e "${C_YELLOW}Stream Status${C_RESET}"
-        echo "DEBUG: Using scdf_url=$scdf_url and token=${token:0:20}..."
-        if [[ -n "$main_stream_name" ]]; then
-          echo "Main stream ($main_stream_name):"
-          curl -sS "${scdf_url%/}/streams/deployments/$main_stream_name" ${token:+-H "Authorization: Bearer $token"} | jq -r '.status // .state // .name // "unknown"'
-        fi
-        if [[ -n "$tap_stream_name" ]]; then
-          echo "Tap stream ($tap_stream_name):"
-          curl -sS "${scdf_url%/}/streams/deployments/$tap_stream_name" ${token:+-H "Authorization: Bearer $token"} | jq -r '.status // .state // .name // "unknown"'
+        if [[ -n "$stream_names" ]]; then
+          for name in $stream_names; do
+            echo "Stream ($name):"
+            check_stream_status "$name" "$token" "$scdf_url"
+          done
+        else
+          echo "No streams found in this configuration."
         fi
         ;;
       3)
@@ -383,14 +379,19 @@ stream_management_submenu() {
         ;;
       6)
         echo -e "${C_YELLOW}Stream Definition${C_RESET}"
-        if [[ -n "$main_stream_name" ]]; then
-          echo "Main stream ($main_stream_name):"
-          echo "  $(yq e '.stream.main_stream.definition' "$config_file")"
-        fi
-        if [[ -n "$tap_stream_name" ]]; then
-          echo "Tap stream ($tap_stream_name):"
-          echo "  $(yq e '.stream.tap_stream.definition' "$config_file")"
-        fi
+        local stream_defs
+        stream_defs=$(yq e '.streams[].definition' "$config_file")
+        
+        # Create arrays of names and definitions (Bash 3 compatible)
+        IFS=$'\n' read -r -d '' -a names_array <<< "$stream_names"
+        IFS=$'\n' read -r -d '' -a defs_array <<< "$stream_defs"
+
+        for i in "${!names_array[@]}"; do
+            local stream_name="${names_array[$i]}"
+            local stream_def="${defs_array[$i]}"
+            echo "Stream ($stream_name):"
+            echo "  $stream_def"
+        done
         ;;
       b|B)
         break

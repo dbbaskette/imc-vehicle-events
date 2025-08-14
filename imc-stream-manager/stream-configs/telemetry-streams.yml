@@ -11,19 +11,15 @@ apps:
     github_url: "https://github.com/dbbaskette/imc-vehicle-events"
 
 # Stream definitions and properties
-stream:
-  name: "telemetry-processing"
-  # Main stream: All telemetry data flows to HDFS (named destination → no rabbit source app)
-  main_stream:
-    name: "telemetry-to-hdfs"
-    definition: ":telematics_work_queue > imc-hdfs-sink"
-  # Tap stream: Accidents only flow to vehicle-events queue  
-  tap_stream:
-    name: "vehicle-events-output"  
-    definition: ":telematics_work_queue > imc-telemetry-processor > :vehicle_events"
+streams:
+  - name: "telemetry-to-hdfs"
+    definition: ":telematics_exchange > imc-hdfs-sink"
+  - name: "telemetry-to-processor"
+    definition: ":telematics_exchange > imc-telemetry-processor > :vehicle_events"
 
-  # Deployment properties
-  deployment_properties:
+
+# Deployment properties
+deployment_properties:
     # Instance scaling
     deployer.imc-hdfs-sink.count: 1
     deployer.imc-telemetry-processor.count: 2
@@ -31,13 +27,15 @@ stream:
     # === Named Destination Consumer Groups ===
     # Each app consumes directly from the existing destination 'telematics_work_queue'
     # Use distinct groups so both receive all messages
-    app.imc-hdfs-sink.spring.cloud.stream.bindings.hdfsSink-in-0.destination: "telematics_work_queue"
+    app.imc-hdfs-sink.spring.cloud.stream.bindings.hdfsSink-in-0.destination: "telematics_exchange"
+    app.imc-hdfs-sink.spring.cloud.stream.rabbit.bindings.hdfsSink-in-0.consumer.exchangeType: "fanout"
     app.imc-hdfs-sink.spring.cloud.stream.bindings.hdfsSink-in-0.group: "hdfs-sink-group"
-    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-in-0.destination: "telematics_work_queue"
-    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-in-0.group: "crash-detection-group"
-    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-out-0.destination: "vehicle_events"
-    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-out-0.group: "vehicle-events-group"
-
+    app.imc-telemetry-processor.spring.cloud.stream.bindings.vehicleEventsOut-in-0.destination: "telematics_exchange"
+    app.imc-telemetry-processor.spring.cloud.stream.rabbit.bindings.vehicleEventsOut-in-0.consumer.exchangeType: "fanout"
+    app.imc-telemetry-processor.spring.cloud.stream.bindings.vehicleEventsOut-in-0.group: "crash-detection-group"
+    app.imc-telemetry-processor.spring.cloud.stream.bindings.vehicleEventsOut-out-0.destination: "vehicle_events"
+    app.imc-telemetry-processor.spring.cloud.stream.rabbit.bindings.vehicleEventsOut-out-0.producer.required-groups: "vehicle-events-group"
+    
     
     # === HDFS Sink Configuration ===
     app.imc-hdfs-sink.spring.profiles.active: "cloud"
@@ -51,19 +49,20 @@ stream:
     app.imc-hdfs-sink.hdfs.outputPath: "${hdfs_output_path:/insurance-megacorp/telemetry-data-v2}"
     app.imc-hdfs-sink.hdfs.user: "${hdfs_user:hdfs}"
     app.imc-hdfs-sink.hdfs.fileFormat: "parquet"
+    app.imc-hdfs-sink.hdfs.partitionPath: "T(java.time.LocalDate).now().toString() + '/' + payload.driverId"
     app.imc-hdfs-sink.hdfs.rollSize: "128MB"
     app.imc-hdfs-sink.hdfs.rollInterval: "300000"
     app.imc-hdfs-sink.hdfs.batchSize: "1000"
     
     # HDFS Performance Tuning
     app.imc-hdfs-sink.hdfs.bufferSize: "65536"
-    app.imc-hdfs-sink.hdfs.replicationFactor: "3"
+    app.imc-hdfs-sink.hdfs.replicationFactor: "1"
     app.imc-hdfs-sink.hdfs.writeTimeout: "60000"
     app.imc-hdfs-sink.hdfs.connectTimeout: "30000"
     
     # === Telemetry Processor Configuration (Tap Stream) ===
     app.imc-telemetry-processor.spring.profiles.active: "cloud"
-    app.imc-telemetry-processor.spring.cloud.function.definition: "telemetryProcessor"
+    app.imc-telemetry-processor.spring.cloud.function.definition: "vehicleEventsOut"
     app.imc-telemetry-processor.spring.cloud.config.enabled: "false"
     app.imc-telemetry-processor.server.port: "8080"
     app.imc-telemetry-processor.server.address: "0.0.0.0"

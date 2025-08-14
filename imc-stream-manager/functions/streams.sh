@@ -20,36 +20,23 @@ deploy_stream_from_config() {
     fi
     
     # Load stream configuration
-    local stream_name
-    stream_name=$(yq e '.stream.name // ""' "$config_file")
-    if [[ -z "$stream_name" ]]; then
-        log_error "No stream name found in configuration" "$context"
+    local stream_names
+    stream_names=$(yq e '.streams[].name' "$config_file")
+    if [[ -z "$stream_names" ]]; then
+        log_error "No stream names found in configuration" "$context"
         return 1
     fi
     
-    log_info "Processing stream: $stream_name" "$context"
-    
     # Step 1: Delete existing streams
     log_info "Step 1: Cleaning up existing streams..." "$context"
-    if yq e '.stream.main_stream.name' "$config_file" >/dev/null 2>&1; then
-        # Handle multi-stream configuration (main + tap)
-        local main_stream_name tap_stream_name
-        main_stream_name=$(yq e '.stream.main_stream.name' "$config_file")
-        tap_stream_name=$(yq e '.stream.tap_stream.name' "$config_file")
-        
-        log_info "Deleting tap stream: $tap_stream_name" "$context"
-        curl -sS -X DELETE "${scdf_url%/}/streams/definitions/$tap_stream_name" \
-            -H "Authorization: Bearer $token" 2>/dev/null || true
-            
-        log_info "Deleting main stream: $main_stream_name" "$context"
-        curl -sS -X DELETE "${scdf_url%/}/streams/definitions/$main_stream_name" \
-            -H "Authorization: Bearer $token" 2>/dev/null || true
-    else
-        # Handle single stream configuration
+    
+    # Migration: Explicitly delete old stream if it exists
+    delete_stream "vehicle-events-output" "$token" "$scdf_url"
+    
+    for stream_name in $stream_names; do
         log_info "Deleting stream: $stream_name" "$context"
-        curl -sS -X DELETE "${scdf_url%/}/streams/definitions/$stream_name" \
-            -H "Authorization: Bearer $token" 2>/dev/null || true
-    fi
+        delete_stream "$stream_name" "$token" "$scdf_url"
+    done
     
     # Step 2: Unregister and register custom apps
     log_info "Step 2: Refreshing custom applications..." "$context"
@@ -137,97 +124,47 @@ deploy_stream_from_config() {
     
     # Step 3: Create and deploy streams
     log_info "Step 3: Creating and deploying streams..." "$context"
-    if yq e '.stream.main_stream.name' "$config_file" >/dev/null 2>&1; then
-        # Handle multi-stream configuration (main + tap)
-        local main_stream_name main_stream_def tap_stream_name tap_stream_def
-        main_stream_name=$(yq e '.stream.main_stream.name' "$config_file")
-        main_stream_def=$(yq e '.stream.main_stream.definition' "$config_file")
-        tap_stream_name=$(yq e '.stream.tap_stream.name' "$config_file")
-        tap_stream_def=$(yq e '.stream.tap_stream.definition' "$config_file")
+    
+    local stream_defs
+    stream_defs=$(yq e '.streams[].definition' "$config_file")
+    
+    # Create an array of names and definitions (Bash 3 compatible)
+    IFS=$'\n' read -r -d '' -a names_array <<< "$stream_names"
+    IFS=$'\n' read -r -d '' -a defs_array <<< "$stream_defs"
+    
+    # Get deployment properties as a single JSON string
+    local props_json
+    props_json=$(build_deployment_properties_json "$config_file")
+
+    for i in "${!names_array[@]}"; do
+        local stream_name="${names_array[$i]}"
+        local stream_def="${defs_array[$i]}"
         
-        # Create main stream
-        log_info "Creating main stream: $main_stream_name" "$context"
-        log_debug "Main stream definition: $main_stream_def" "$context"
-        if ! curl -sS -X POST "${scdf_url%/}/streams/definitions" \
-            -H "Authorization: Bearer $token" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "name=$main_stream_name" \
-            --data-urlencode "definition=$main_stream_def"; then
-            log_error "Failed to create main stream" "$context"
-            return 1
-        fi
-        
-        # Deploy main stream with properties
-        log_info "Deploying main stream: $main_stream_name" "$context"
-        local main_props_json
-        main_props_json=$(build_deployment_properties_json "$config_file")
-        if ! curl -sS -X POST "${scdf_url%/}/streams/deployments/$main_stream_name" \
-            -H "Authorization: Bearer $token" \
-            -H "Content-Type: application/json" \
-            -d "$main_props_json"; then
-            log_error "Failed to deploy main stream" "$context"
-            return 1
-        fi
-        
-        # Wait for main stream to start
-        sleep 10
-        
-        # Create tap stream
-        log_info "Creating tap stream: $tap_stream_name" "$context"
-        log_debug "Tap stream definition: $tap_stream_def" "$context"
-        if ! curl -sS -X POST "${scdf_url%/}/streams/definitions" \
-            -H "Authorization: Bearer $token" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "name=$tap_stream_name" \
-            --data-urlencode "definition=$tap_stream_def"; then
-            log_error "Failed to create tap stream" "$context"
-            return 1
-        fi
-        
-        # Deploy tap stream
-        log_info "Deploying tap stream: $tap_stream_name" "$context"
-        local tap_props_json
-        tap_props_json=$(build_deployment_properties_json "$config_file")
-        if ! curl -sS -X POST "${scdf_url%/}/streams/deployments/$tap_stream_name" \
-            -H "Authorization: Bearer $token" \
-            -H "Content-Type: application/json" \
-            -d "$tap_props_json"; then
-            log_error "Failed to deploy tap stream" "$context"
-            return 1
-        fi
-        
-        log_success "Multi-stream deployment completed: $main_stream_name + $tap_stream_name" "$context"
-    else
-        # Handle single stream configuration
-        local stream_def
-        stream_def=$(yq e '.stream.definition' "$config_file")
-        
-        log_info "Creating stream: $stream_name" "$context"
+        log_info "Creating and deploying stream: $stream_name" "$context"
         log_debug "Stream definition: $stream_def" "$context"
+        
+        # Create the stream
         if ! curl -sS -X POST "${scdf_url%/}/streams/definitions" \
             -H "Authorization: Bearer $token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             --data-urlencode "name=$stream_name" \
             --data-urlencode "definition=$stream_def"; then
-            log_error "Failed to create stream" "$context"
+            log_error "Failed to create stream: $stream_name" "$context"
             return 1
         fi
-        
-        # Deploy stream
-        log_info "Deploying stream: $stream_name" "$context"
-        local props_json
-        props_json=$(build_deployment_properties_json "$config_file")
+
+        # Deploy the stream with common properties
         if ! curl -sS -X POST "${scdf_url%/}/streams/deployments/$stream_name" \
             -H "Authorization: Bearer $token" \
             -H "Content-Type: application/json" \
             -d "$props_json"; then
-            log_error "Failed to deploy stream" "$context"
+            log_error "Failed to deploy stream: $stream_name" "$context"
             return 1
         fi
-        
-        log_success "Single stream deployment completed: $stream_name" "$context"
-    fi
+        log_success "Stream $stream_name deployed successfully." "$context"
+    done
     
+    log_success "All streams deployed successfully." "$context"
     return 0
 }
 
@@ -237,7 +174,7 @@ build_deployment_properties_json() {
     local context="DEPLOY_PROPS"
     
     # Check if deployment properties exist
-    if ! yq e '.stream.deployment_properties' "$config_file" >/dev/null 2>&1; then
+    if ! yq e '.deployment_properties' "$config_file" >/dev/null 2>&1; then
         log_debug "No deployment properties found, using empty config" "$context"
         echo "{}"
         return 0
@@ -245,7 +182,7 @@ build_deployment_properties_json() {
     
     # Extract deployment properties in key=value format (preserving dots in keys)
     local props
-    props=$(yq e '.stream.deployment_properties | to_entries | .[] | .key + "=" + .value' "$config_file")
+    props=$(yq e '.deployment_properties | to_entries | .[] | .key + "=" + .value' "$config_file")
     
     if [[ -z "$props" ]]; then
         log_debug "No valid properties found, using empty deployment config" "$context"
