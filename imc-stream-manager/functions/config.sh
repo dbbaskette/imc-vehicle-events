@@ -20,10 +20,11 @@ load_configuration() {
     log_error "Config file not found: $config_file"
     return 1
   fi
-  export SCDF_URL=$(yq -r '.scdf.url' "$config_file")
-  export SCDF_TOKEN_URL=$(yq -r '.scdf.token_url' "$config_file")
-  export STREAM_NAME=$(yq -r '.stream.name' "$config_file")
-  export STREAM_DEF=$(yq -r '.stream.definition' "$config_file")
+  # Handle both legacy format and new default: format
+  export SCDF_URL=$(yq -r '.default.scdf.url // .scdf.url // "https://dataflow.example.com"' "$config_file")
+  export SCDF_TOKEN_URL=$(yq -r '.default.scdf.token_url // .scdf.token_url // "https://login.example.com/oauth/token"' "$config_file")
+  export STREAM_NAME=$(yq -r '.stream.name // ""' "$config_file")
+  export STREAM_DEF=$(yq -r '.stream.definition // ""' "$config_file")
   CONFIG_LOADED=true
   CONFIG_ENVIRONMENT="$env"
   return 0

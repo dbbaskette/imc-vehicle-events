@@ -1,0 +1,132 @@
+# Telemetry Processing Streams Configuration
+# Tap-based architecture: Main stream (all data to HDFS) + Tap stream (accidents to vehicle-events)
+
+# Application definitions specific to telemetry processing
+apps:
+  imc-telemetry-processor:
+    type: "processor"
+    github_url: "https://github.com/dbbaskette/imc-vehicle-events"
+  imc-hdfs-sink:
+    type: "sink"
+    github_url: "https://github.com/dbbaskette/imc-vehicle-events"
+
+# Stream definitions and properties
+stream:
+  name: "telemetry-processing"
+  # Main stream: All telemetry data flows to HDFS (named destination → no rabbit source app)
+  main_stream:
+    name: "telemetry-to-hdfs"
+    definition: ":telematics_work_queue > imc-hdfs-sink"
+  # Tap stream: Accidents only flow to vehicle-events queue  
+  tap_stream:
+    name: "vehicle-events-output"  
+    definition: ":telematics_work_queue > imc-telemetry-processor > :vehicle_events"
+
+  # Deployment properties
+  deployment_properties:
+    # Instance scaling
+    deployer.imc-hdfs-sink.count: 1
+    deployer.imc-telemetry-processor.count: 2
+    
+    # === Named Destination Consumer Groups ===
+    # Each app consumes directly from the existing destination 'telematics_work_queue'
+    # Use distinct groups so both receive all messages
+    app.imc-hdfs-sink.spring.cloud.stream.bindings.hdfsSink-in-0.destination: "telematics_work_queue"
+    app.imc-hdfs-sink.spring.cloud.stream.bindings.hdfsSink-in-0.group: "hdfs-sink-group"
+    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-in-0.destination: "telematics_work_queue"
+    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-in-0.group: "crash-detection-group"
+    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-out-0.destination: "vehicle_events"
+    app.imc-telemetry-processor.spring.cloud.stream.bindings.telemetryProcessor-out-0.group: "vehicle-events-group"
+
+    
+    # === HDFS Sink Configuration ===
+    app.imc-hdfs-sink.spring.profiles.active: "cloud"
+    app.imc-hdfs-sink.spring.cloud.function.definition: "hdfsSink"
+    app.imc-hdfs-sink.spring.cloud.config.enabled: "false"
+    app.imc-hdfs-sink.server.port: "8080"
+    app.imc-hdfs-sink.server.address: "0.0.0.0"
+    
+    # HDFS Connection Properties
+    app.imc-hdfs-sink.hdfs.namenodeUri: "${hdfs_namenode_uri:hdfs://big-data-005.kuhn-labs.com:8020}"
+    app.imc-hdfs-sink.hdfs.outputPath: "${hdfs_output_path:/insurance-megacorp/telemetry-data-v2}"
+    app.imc-hdfs-sink.hdfs.user: "${hdfs_user:hdfs}"
+    app.imc-hdfs-sink.hdfs.fileFormat: "parquet"
+    app.imc-hdfs-sink.hdfs.rollSize: "128MB"
+    app.imc-hdfs-sink.hdfs.rollInterval: "300000"
+    app.imc-hdfs-sink.hdfs.batchSize: "1000"
+    
+    # HDFS Performance Tuning
+    app.imc-hdfs-sink.hdfs.bufferSize: "65536"
+    app.imc-hdfs-sink.hdfs.replicationFactor: "3"
+    app.imc-hdfs-sink.hdfs.writeTimeout: "60000"
+    app.imc-hdfs-sink.hdfs.connectTimeout: "30000"
+    
+    # === Telemetry Processor Configuration (Tap Stream) ===
+    app.imc-telemetry-processor.spring.profiles.active: "cloud"
+    app.imc-telemetry-processor.spring.cloud.function.definition: "telemetryProcessor"
+    app.imc-telemetry-processor.spring.cloud.config.enabled: "false"
+    app.imc-telemetry-processor.server.port: "8080"
+    app.imc-telemetry-processor.server.address: "0.0.0.0"
+    
+    # Telemetry Processing Properties
+    app.imc-telemetry-processor.telemetry.accident.gforce.threshold: "${gforce_threshold:5.0}"
+    app.imc-telemetry-processor.telemetry.validation.enabled: "true"
+    app.imc-telemetry-processor.telemetry.metrics.enabled: "true"
+    
+    # Stream Bindings for Tap
+    # Do not override bindings when using tap; SCDF wires the tap to the processor input automatically
+    
+    # === Rabbit Sink Configuration (Tap Stream Output) ===
+    # Sink routing defined in tap stream DSL via --routingKey; no additional binding overrides
+    
+    # === Management and Monitoring ===
+    # HDFS Sink Management
+    app.imc-hdfs-sink.management.server.port: "-1"
+    app.imc-hdfs-sink.management.endpoints.web.base-path: "/actuator"
+    app.imc-hdfs-sink.management.endpoints.web.exposure.include: "health,info,env,metrics,prometheus"
+    app.imc-hdfs-sink.management.endpoint.health.show-details: "always"
+    app.imc-hdfs-sink.management.endpoint.health.show-components: "always"
+    app.imc-hdfs-sink.management.endpoint.health.probes.enabled: "true"
+    
+    # Telemetry Processor Management
+    app.imc-telemetry-processor.management.server.port: "-1"
+    app.imc-telemetry-processor.management.endpoints.web.base-path: "/actuator"
+    app.imc-telemetry-processor.management.endpoints.web.exposure.include: "health,info,env,metrics,prometheus"
+    app.imc-telemetry-processor.management.endpoint.health.show-details: "always"
+    app.imc-telemetry-processor.management.endpoint.health.show-components: "always"
+    app.imc-telemetry-processor.management.endpoint.health.probes.enabled: "true"
+    
+    # === Standardized Logging Configuration ===
+    # HDFS Sink Logging
+    app.imc-hdfs-sink.logging.level.root: "INFO"
+    app.imc-hdfs-sink.logging.level.org.springframework: "INFO"
+    app.imc-hdfs-sink.logging.level.org.apache.hadoop: "INFO"
+    app.imc-hdfs-sink.logging.level.com.insurancemegacorp: "INFO"
+    
+    # Telemetry Processor Logging
+    app.imc-telemetry-processor.logging.level.root: "INFO"
+    app.imc-telemetry-processor.logging.level.org.springframework: "INFO"
+    app.imc-telemetry-processor.logging.level.com.insurancemegacorp: "INFO"
+    
+    # === Cloud Foundry Deployment Settings ===
+    deployer.*.cloudfoundry.use-version-as-application-name-suffix: "false"
+    
+    # HDFS Sink Deployment
+    deployer.imc-hdfs-sink.memory: "2048M"
+    deployer.imc-hdfs-sink.cloudfoundry.disk: "2048M"
+    deployer.imc-hdfs-sink.cloudfoundry.use-version-as-application-name-suffix: "false"
+    deployer.imc-hdfs-sink.cloudfoundry.health-check-type: "http"
+    deployer.imc-hdfs-sink.cloudfoundry.health-check-http-endpoint: "/actuator/health"
+    deployer.imc-hdfs-sink.cloudfoundry.startup-timeout: "180"
+    deployer.imc-hdfs-sink.cloudfoundry.env.JBP_CONFIG_OPEN_JDK_JRE: "{ jre: { version: 21.+} }"
+    deployer.imc-hdfs-sink.cloudfoundry.env.JAVA_OPTS: "-XX:MaxDirectMemorySize=256m -Xmx1536m -Xms512m"
+    
+    # Telemetry Processor Deployment
+    deployer.imc-telemetry-processor.memory: "1024M"
+    deployer.imc-telemetry-processor.cloudfoundry.disk: "1024M"
+    deployer.imc-telemetry-processor.cloudfoundry.use-version-as-application-name-suffix: "false"
+    deployer.imc-telemetry-processor.cloudfoundry.health-check-type: "http"
+    deployer.imc-telemetry-processor.cloudfoundry.health-check-http-endpoint: "/actuator/health"
+    deployer.imc-telemetry-processor.cloudfoundry.startup-timeout: "120"
+    deployer.imc-telemetry-processor.cloudfoundry.env.JBP_CONFIG_OPEN_JDK_JRE: "{ jre: { version: 21.+} }"
+    deployer.imc-telemetry-processor.cloudfoundry.env.JAVA_OPTS: "-XX:MaxDirectMemorySize=128m -Xmx768m -Xms256m"
