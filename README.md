@@ -1,9 +1,10 @@
-# IMC Telemetry Stream (SCDF)
+# IMC Vehicle Events Stream Processor
 
-Multi-module project containing:
-- `imc-telemetry-processor`: Spring Cloud Stream processor that taps telemetry, flattens JSON, and emits vehicle events to `vehicle-events`.
-- `imc-hdfs-sink`: Spring Cloud Stream sink that writes telemetry JSON to HDFS as Parquet (partitioned by date).
-- `imc-stream-manager`: SCDF stream manager scripts and configs.
+This project provides a stream processing solution for handling vehicle telematics data, detecting events, and storing the data for further analysis. It consists of the following key components:
+
+- **imc-telemetry-processor**: A Spring Cloud Stream application that processes vehicle telemetry data. It identifies significant events (e.g., high G-force indicating a potential crash) and forwards them for immediate action.
+- **imc-hdfs-sink**: A Spring Cloud Stream application that archives all incoming telemetry data into a Hadoop Distributed File System (HDFS) for long-term storage and batch analysis.
+- **imc-stream-manager**: A set of scripts and configuration files for managing the deployment and lifecycle of the streams in a Spring Cloud Data Flow (SCDF) environment.
 
 ## Prerequisites
 
@@ -126,3 +127,11 @@ Both apps expose actuator endpoints (health, info, metrics). Example queries:
 - Stream manager: `imc-stream-manager/scdf-config.yaml.template` (copy to `config.yml` and create per-stream `config-<name>.yml` as needed)
 
 These templates use environment variables for sensitive configuration values. The actual `*.yml` files are ignored by git to prevent accidentally committing secrets.
+
+## Project Roadmap
+
+- [X] **Phase 1: Telemetry Processor** - Function to detect high g-force, flatten JSON, and emit vehicle events.
+- [X] **Phase 2: HDFS Sink** - Sink to write raw telemetry to HDFS in Parquet format.
+- [X] **Phase 3: Stream Manager** - Scripts to manage SCDF stream lifecycle.
+- [ ] **Phase 4: SCDF Integration** - Full end-to-end deployment and validation in SCDF.
+- [ ] **Phase 5: Documentation & Ops** - Finalize runbooks, configuration guides, and operational notes.

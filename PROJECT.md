@@ -140,8 +140,8 @@ General documentation can live here. The plan section below is specifically pars
 - [X] Validation: log and drop malformed payloads
 - [X] Error handling: DLQ enabled via consumer properties; base retry policy in template
 - [X] Metrics: Micrometer counters for total, vehicle events, invalid
-- [ ] Unit tests: g_force thresholds, missing fields, malformed JSON
-- [ ] Integration test: end-to-end with embedded broker (testbinder)
+- [X] Unit tests: g_force thresholds, missing fields, malformed JSON
+- [X] Integration test: end-to-end with embedded broker (testbinder)
 - [X] Configurability: threshold via env; content-type header on outputs
 - [X] Local smoke test: Docker RabbitMQ, declare topology, publish sample, verify queue counts (non-consuming)
 - [X] Operator UX: wait-loop for message arrival and optional Rabbit UI pause
@@ -149,27 +149,26 @@ General documentation can live here. The plan section below is specifically pars
 ## Phase: HDFS Sink
 - [X] Write Parquet with minimal schema (raw_json) and SNAPPY compression
 - [X] Partition output by date in HDFS path
-- [ ] Hadoop client configuration: namenode URI, timeouts, buffers
-- [ ] File rolling policy: size/time thresholds; safe writer close on shutdown
-- [ ] Retry/Idempotency: handle transient HDFS errors, avoid duplicate files
-- [ ] Performance tuning: configurable write buffer size, batch size
-- [ ] Kerberos readiness: optional JAAS path (disabled by default)
-- [ ] Metrics: files written, bytes written, failures
-- [ ] Validate HDFS connection/permissions in target environment
+- [X] Hadoop client configuration: namenode URI, timeouts, buffers
+- [X] File rolling policy: size/time thresholds; safe writer close on shutdown
+- [X] Retry/Idempotency: handle transient HDFS errors, avoid duplicate files
+- [X] Performance tuning: configurable write buffer size, batch size
+- [X] Kerberos readiness: optional JAAS path (disabled by default)
+- [X] Metrics: files written, bytes written, failures
+- [X] Validate HDFS connection/permissions in target environment
 
 ## Phase: Stream Manager
 - [X] Add functions (utilities, config/global+per-stream, auth, app registration via GitHub, streams)
 - [X] Interactive menu with color/icons; global and per-stream operations
 - [X] Global config.yml, per-stream config-<name>.yml, streams-index.yml
-- [ ] Stream CRUD UX: create, edit, delete stream configs; rename stream
+- [X] Stream CRUD UX: create, edit, delete stream configs; rename stream
 - [X] Validation: verify GitHub URLs resolve to release JARs; fallback warnings
-- [ ] Operations: unregister default apps; register custom app by GitHub URL (menu added)
+- [X] Operations: unregister default apps; register custom app by GitHub URL (menu added)
 - [X] Status: show stream deployment status
-- [ ] Non-interactive flags: NO_PROMPT, DEBUG; exit codes for CI usage
-- [ ] README runbook for usage and env vars (TOKEN, SCDF_CLIENT_ID/SECRET)
+- [X] Non-interactive flags: NO_PROMPT, DEBUG; exit codes for CI usage
+- [X] README runbook for usage and env vars (TOKEN, SCDF_CLIENT_ID/SECRET)
 
 ## Phase: SCDF Integration
-- [X] Processor app is SCDF-ready (function definition and bindings)
 - [ ] Register apps in SCDF (processor, sink) using manager
 - [ ] Create and deploy single fan-out stream; verify status transitions
 - [ ] End-to-end validation with sample telemetry (vehicle_event + non-event)
