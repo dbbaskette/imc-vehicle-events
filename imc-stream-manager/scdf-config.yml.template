@@ -2,13 +2,12 @@
 # Copy to scdf-config.yml and edit values.
 
 scdf:
-  url: "https://dataflow.example.com"
-  token_url: "https://login.example.com/oauth/token"
-
+  url:  "https://dataflow-c856b29a-1c7e-4fd5-ab3b-0633b90869cc.apps.tas-ndc.kuhn-labs.com"
+  token_url: "https://login.sys.tas-ndc.kuhn-labs.com/oauth/token"
 apps:
   telemetryProcessor:
     type: processor
-    github_url: "https://github.com/your-org/imc-telemetry-processor"
+    github_url: "https://github.com/dbbaskette/imc-telemetry-processor"
   hdfsSink:
     type: sink
     github_url: "https://github.com/your-org/imc-hdfs-sink"
