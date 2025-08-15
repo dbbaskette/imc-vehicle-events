@@ -166,6 +166,29 @@ External Telemetry Generator
                           └─────────────────┘
 ```
 
+## HDFS Storage
+
+### File Format and Structure
+The `imc-hdfs-sink` writes all flat telemetry data to HDFS for long-term storage and analytics:
+
+- **Format**: Apache Parquet with SNAPPY compression
+- **Partitioning**: Date and driver-based partitioning for optimal query performance
+  - Path structure: `/insurance-megacorp/telemetry-data-v2/YYYY-MM-DD/driver_id/`
+  - Example: `/insurance-megacorp/telemetry-data-v2/2024-08-15/400018/telemetry-20240815-143022.parquet`
+- **File Rolling**: 
+  - Size-based: 128MB file size limit
+  - Time-based: 5-minute intervals (300 seconds)
+  - Message-based: 1000 messages per batch
+- **Replication**: HDFS replication factor set to 1 (demo environment)
+- **Schema**: Direct mapping from flat JSON to Parquet columns (no transformation)
+
+### Performance Benefits
+- **Columnar Storage**: Parquet format optimized for analytical queries
+- **Efficient Compression**: SNAPPY compression reduces storage footprint
+- **Partition Pruning**: Date/driver partitioning enables efficient query filtering
+- **Parallel Processing**: Multiple files enable parallel data processing
+- **Zero Schema Evolution**: Flat structure eliminates nested field complexity
+
 ## Message Format
 
 ### Input: Pre-Flattened Telemetry JSON
@@ -213,7 +236,7 @@ The telemetry generator now sends optimized flat JSON directly, eliminating tran
 
 ## Database Schema
 
-The Greenplum table schema matches the flattened JSON exactly:
+The Greenplum table schema matches the flattened JSON exactly. **Note**: Partitioning was removed to simplify the demo environment:
 
 ```sql
 CREATE TABLE vehicle_events (
@@ -258,13 +281,26 @@ CREATE TABLE vehicle_events (
     device_screen_on BOOLEAN,
     device_charging BOOLEAN
 )
-DISTRIBUTED BY (vehicle_id)
-PARTITION BY RANGE (event_time) (
-    START (date '2024-01-01') INCLUSIVE
-    END (date '2025-12-31') EXCLUSIVE
-    EVERY (INTERVAL '1 month')
-);
+WITH (
+    APPENDONLY=true,
+    OIDS=FALSE
+)
+DISTRIBUTED BY (vehicle_id);
+
+-- Indexes for performance
+CREATE INDEX idx_vehicle_events_event_time ON vehicle_events (event_time);
+CREATE INDEX idx_vehicle_events_policy_id ON vehicle_events (policy_id);
+CREATE INDEX idx_vehicle_events_vehicle_id ON vehicle_events (vehicle_id);
+CREATE INDEX idx_vehicle_events_driver_id ON vehicle_events (driver_id);
+CREATE INDEX idx_vehicle_events_g_force ON vehicle_events (g_force);
 ```
+
+### Schema Features
+- **Direct Field Mapping**: Column names match JSON field names exactly
+- **Automatic Type Conversion**: `event_time` ISO strings convert to `TIMESTAMP WITH TIME ZONE`
+- **Simplified Design**: No partitioning for demo environment (keeps it simple)
+- **Performance Indexes**: Key fields indexed for efficient queries
+- **Accident Focus**: Only stores high g-force events (accidents) from telemetry processor
 
 ## Actuator Metrics
 
@@ -293,6 +329,7 @@ The simplified fanout architecture with pre-flattened JSON provides:
 - **🔧 Simplified Maintainability**: Fewer components and processing steps
 - **📊 Database Ready**: Field names match database columns exactly
 - **📈 Better Scalability**: Independent scaling of HDFS sink and accident processor
-- **🔍 Optimized Storage**: HDFS partitioned by date and driver for efficient queries
+- **🔍 Optimized HDFS Storage**: Parquet format with date/driver partitioning for efficient analytics
+- **🗃️ Simplified Database**: No partitioning in Greenplum for demo simplicity
 
 The stream manager uses a unified configuration approach with global settings in `config.yml` and stream-specific settings in the `stream-configs/` directory.
