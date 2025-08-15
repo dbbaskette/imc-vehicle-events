@@ -403,6 +403,80 @@ stream_management_submenu() {
   done
 }
 
+cleanup_menu() {
+  while true; do
+    echo
+    echo -e "${C_BLUE}🧹 Cleanup Operations${C_RESET}"
+    echo "1) 🗂️  Clean HDFS data"
+    echo "2) 🐰 Clean RabbitMQ queues"
+    echo "3) 🗄️  Clean database tables"
+    echo "b) ↩️  Back to main menu"
+    read -p "Choose cleanup option: " cleanup_choice
+    
+    case "$cleanup_choice" in
+      1)
+        cleanup_hdfs_data
+        ;;
+      2)
+        echo -e "${C_YELLOW}RabbitMQ cleanup not yet implemented${C_RESET}"
+        ;;
+      3)
+        echo -e "${C_YELLOW}Database cleanup not yet implemented${C_RESET}"
+        ;;
+      b|B)
+        break
+        ;;
+      *)
+        echo "Invalid choice"
+        ;;
+    esac
+  done
+}
+
+cleanup_hdfs_data() {
+  echo
+  echo -e "${C_RED}⚠️  HDFS Data Cleanup${C_RESET}"
+  echo -e "${C_YELLOW}This will permanently delete ALL data in:${C_RESET}"
+  echo "  /insurance-megacorp/"
+  echo
+  echo -e "${C_RED}WARNING: This action cannot be undone!${C_RESET}"
+  echo -e "${C_YELLOW}Data will be deleted immediately (skipping trash)${C_RESET}"
+  echo
+  read -p "Type 'DELETE' to confirm this destructive operation: " confirm
+  
+  if [[ "$confirm" == "DELETE" ]]; then
+    echo
+    echo -e "${C_BLUE}Deleting HDFS data...${C_RESET}"
+    
+    # Load HDFS configuration from telemetry streams config
+    local config_file="$STREAM_CONFIGS_DIR/telemetry-streams.yml"
+    if [[ -f "$config_file" ]]; then
+      local hdfs_namenode
+      hdfs_namenode=$(yq e '.deploy.telemetry-to-hdfs.app.imc-hdfs-sink.hdfs.namenodeUri // "hdfs://big-data-005.kuhn-labs.com:8020"' "$config_file")
+      local hdfs_user
+      hdfs_user=$(yq e '.deploy.telemetry-to-hdfs.app.imc-hdfs-sink.hdfs.user // "hdfs"' "$config_file")
+      
+      # Use hdfs command to delete the directory and skip trash
+      if command -v hdfs >/dev/null 2>&1; then
+        echo "Using hdfs command..."
+        hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/ 2>/dev/null || true
+        log_success "HDFS cleanup completed"
+      else
+        echo -e "${C_YELLOW}hdfs command not available. Please run manually:${C_RESET}"
+        echo "  hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
+        echo
+        echo "Or via WebHDFS API:"
+        echo "  curl -X DELETE \"${hdfs_namenode}/webhdfs/v1/insurance-megacorp?op=DELETE&recursive=true&user.name=${hdfs_user}\""
+      fi
+    else
+      echo -e "${C_YELLOW}Telemetry streams config not found. Please run manually:${C_RESET}"
+      echo "  hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
+    fi
+  else
+    echo "Cleanup cancelled."
+  fi
+}
+
 main_menu() {
   while true; do
     print_header
@@ -412,6 +486,7 @@ main_menu() {
     echo "4) 🧭 Manage an existing stream"
     echo "5) 🚀 Deploy Streams"
     echo "6) 🧩 Register custom app by GitHub URL"
+    echo "7) 🧹 Cleanup Operations"
     echo "q) ❎ Quit"
     read -p "Choose: " choice
     case "$choice" in
@@ -441,6 +516,9 @@ main_menu() {
           local auth=(); [ -n "$TOKEN" ] && auth=(-H "Authorization: Bearer $TOKEN")
           curl -sS -X POST "${SCDF_URL%/}/apps/$at/$an" -H "Content-Type: application/x-www-form-urlencoded" "${auth[@]}" --data-urlencode "uri=$jar_url" && log_success "Registered $an"
         fi
+        ;;
+      7)
+        cleanup_menu
         ;;
       q|Q)
         exit 0
