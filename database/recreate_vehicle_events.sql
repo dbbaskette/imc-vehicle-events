@@ -1,42 +1,57 @@
 -- Drop and recreate vehicle_events table for JDBC sink compatibility
--- This script changes event_timestamp from TIMESTAMP WITH TIME ZONE to BIGINT
--- to accept numeric timestamps directly from the telemetry processor
+-- Updated schema to align with new flattened JSON structure including new fields
 
 -- Drop the existing table if it exists
 DROP TABLE IF EXISTS vehicle_events;
 
--- Recreate the table with BIGINT for event_timestamp
+-- Recreate the table with contextual field names for better clarity
 CREATE TABLE vehicle_events (
+    -- Core telemetry fields
     policy_id BIGINT,
     vehicle_id BIGINT,
     vin VARCHAR(255),
-    event_timestamp BIGINT,
+    event_time VARCHAR(255),
     speed_mph REAL,
+    speed_limit_mph REAL,
     current_street VARCHAR(255),
     g_force REAL,
-    latitude DOUBLE PRECISION,
-    longitude DOUBLE PRECISION,
-    altitude DOUBLE PRECISION,
-    speed_ms REAL,
-    bearing REAL,
-    accuracy REAL,
-    satellite_count INTEGER,
+    driver_id VARCHAR(255),
+    
+    -- GPS sensor data
+    gps_latitude DOUBLE PRECISION,
+    gps_longitude DOUBLE PRECISION,
+    gps_altitude DOUBLE PRECISION,
+    gps_speed_ms REAL,
+    gps_bearing REAL,
+    gps_accuracy REAL,
+    gps_satellite_count INTEGER,
     gps_fix_time INTEGER,
-    accel_x REAL,
-    accel_y REAL,
-    accel_z REAL,
-    gyro_pitch REAL,
-    gyro_roll REAL,
-    gyro_yaw REAL,
-    mag_x REAL,
-    mag_y REAL,
-    mag_z REAL,
-    heading REAL,
-    battery_level INTEGER,
-    signal_strength INTEGER,
-    orientation VARCHAR(255),
-    screen_on BOOLEAN,
-    charging BOOLEAN
+    
+    -- Accelerometer sensor data
+    accelerometer_x REAL,
+    accelerometer_y REAL,
+    accelerometer_z REAL,
+    
+    -- Gyroscope sensor data
+    gyroscope_pitch REAL,
+    gyroscope_roll REAL,
+    gyroscope_yaw REAL,
+    
+    -- Magnetometer sensor data
+    magnetometer_x REAL,
+    magnetometer_y REAL,
+    magnetometer_z REAL,
+    magnetometer_heading REAL,
+    
+    -- Environmental sensor data
+    sensors_barometric_pressure REAL,
+    
+    -- Device status data
+    device_battery_level REAL,
+    device_signal_strength INTEGER,
+    device_orientation VARCHAR(255),
+    device_screen_on BOOLEAN,
+    device_charging BOOLEAN
 )
 WITH (
     APPENDONLY=true,
@@ -45,44 +60,61 @@ WITH (
 DISTRIBUTED BY (vehicle_id);
 
 -- Add indexes for performance
-CREATE INDEX idx_vehicle_events_timestamp ON vehicle_events (event_timestamp);
+CREATE INDEX idx_vehicle_events_event_time ON vehicle_events (event_time);
 CREATE INDEX idx_vehicle_events_policy_id ON vehicle_events (policy_id);
 CREATE INDEX idx_vehicle_events_vehicle_id ON vehicle_events (vehicle_id);
+CREATE INDEX idx_vehicle_events_driver_id ON vehicle_events (driver_id);
 
 -- Create a view for easy querying with proper timestamp conversion
--- The timestamp is stored as milliseconds since epoch, so divide by 1000 for seconds
+-- The event_time is stored as ISO 8601 string, this view converts it to timestamp
 CREATE VIEW vehicle_events_view AS
 SELECT 
+    -- Core telemetry fields
     policy_id,
     vehicle_id,
     vin,
-    to_timestamp(event_timestamp/1000.0) AT TIME ZONE 'UTC' as event_timestamp,
+    event_time::timestamp with time zone as event_timestamp,
     speed_mph,
+    speed_limit_mph,
     current_street,
     g_force,
-    latitude,
-    longitude,
-    altitude,
-    speed_ms,
-    bearing,
-    accuracy,
-    satellite_count,
+    driver_id,
+    
+    -- GPS sensor data
+    gps_latitude,
+    gps_longitude,
+    gps_altitude,
+    gps_speed_ms,
+    gps_bearing,
+    gps_accuracy,
+    gps_satellite_count,
     gps_fix_time,
-    accel_x,
-    accel_y,
-    accel_z,
-    gyro_pitch,
-    gyro_roll,
-    gyro_yaw,
-    mag_x,
-    mag_y,
-    mag_z,
-    heading,
-    battery_level,
-    signal_strength,
-    orientation,
-    screen_on,
-    charging
+    
+    -- Accelerometer sensor data
+    accelerometer_x,
+    accelerometer_y,
+    accelerometer_z,
+    
+    -- Gyroscope sensor data
+    gyroscope_pitch,
+    gyroscope_roll,
+    gyroscope_yaw,
+    
+    -- Magnetometer sensor data
+    magnetometer_x,
+    magnetometer_y,
+    magnetometer_z,
+    magnetometer_heading,
+    
+    -- Environmental sensor data
+    sensors_barometric_pressure,
+    
+    -- Device status data
+    device_battery_level,
+    device_signal_strength,
+    device_orientation,
+    device_screen_on,
+    device_charging
 FROM vehicle_events;
 
 -- Grant permissions (adjust as needed for your environment)

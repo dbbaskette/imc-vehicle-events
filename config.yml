@@ -1,0 +1,4 @@
+scdf:
+  url: "https://dataflow.example.com"
+  token_url: "https://login.example.com/oauth/token"
+

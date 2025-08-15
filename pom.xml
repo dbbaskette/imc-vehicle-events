@@ -14,5 +14,6 @@
     <modules>
         <module>imc-hdfs-sink</module>
         <module>imc-telemetry-processor</module>
+        <module>imc-telemetry-flattener</module>
     </modules>
 </project>
