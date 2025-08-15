@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/logo.png" alt="Insurance MegaCorp Logo" width="200"/>
+</div>
+
 # IMC Telemetry Stream (SCDF)
 
 Multi-module project containing:
