@@ -170,9 +170,10 @@ External Telemetry Generator
 The `imc-hdfs-sink` writes all flat telemetry data to HDFS for long-term storage and analytics:
 
 - **Format**: Apache Parquet with SNAPPY compression
-- **Partitioning**: Date and driver-based partitioning for optimal query performance
-  - Path structure: `/insurance-megacorp/telemetry-data-v2/YYYY-MM-DD/driver_id/`
-  - Example: `/insurance-megacorp/telemetry-data-v2/2024-08-15/400018/telemetry-20240815-143022.parquet`
+- **Partitioning**: Date and driver-based partitioning using Hive-style partitioning
+  - Path structure: `/insurance-megacorp/telemetry-data-v2/date=YYYY-MM-DD/driver_id=NNNNNN/`
+  - Example: `/insurance-megacorp/telemetry-data-v2/date=2025-08-15/driver_id=400018/telemetry-20250815_154231-1755272551646.parquet`
+  - Configuration: `hdfs.partitionPath: "'date=' + T(java.time.LocalDate).now().toString() + '/driver_id=' + payload.driver_id"`
 - **File Rolling**: 
   - Size-based: 128MB file size limit
   - Time-based: 5-minute intervals (300 seconds)
@@ -183,7 +184,7 @@ The `imc-hdfs-sink` writes all flat telemetry data to HDFS for long-term storage
 ### Performance Benefits
 - **Columnar Storage**: Parquet format optimized for analytical queries
 - **Efficient Compression**: SNAPPY compression reduces storage footprint
-- **Partition Pruning**: Date/driver partitioning enables efficient query filtering
+- **Partition Pruning**: Hive-style date/driver partitioning enables efficient query filtering
 - **Parallel Processing**: Multiple files enable parallel data processing
 - **Zero Schema Evolution**: Flat structure eliminates nested field complexity
 
