@@ -172,12 +172,33 @@ General documentation can live here. The plan section below is specifically pars
 - [X] README runbook for usage and env vars (TOKEN, SCDF_CLIENT_ID/SECRET)
 
 ## Phase: SCDF Integration
+
+### Environment Configuration
+- **SCDF Server**: Cloud Foundry deployment (URL in config.yml)
+- **Admin Access**: Available for custom app registration
+- **Artifact Hosting**: GitHub releases (versioned JARs)
+- **Architecture**: Tap-based stream pattern
+
+### Stream Design
+- **Main Stream**: `telemetry-to-hdfs`
+  - Source: RabbitMQ (`telematics_work_queue` / `crash-detection-group`)
+  - Sink: HDFS (all telemetry data)
+- **Tap Stream**: `accident-detection` 
+  - Tap: Main stream → Processor → RabbitMQ sink
+  - Output: `vehicle_events` / `vehicle-events-group` (accidents only)
+- **Data Source**: External telemetry generator → `telematics_work_queue`
+- **Monitoring**: SCDF UI (pipeline events stream for future)
+
+### Implementation Tasks
 - [X] Processor app is SCDF-ready (function definition and bindings)
 - [X] Sink app is SCDF-ready (function definition and bindings)
-- [ ] Register apps in SCDF (processor, sink) using manager
-- [ ] Create and deploy single fan-out stream; verify status transitions
-- [ ] End-to-end validation with sample telemetry (vehicle_event + non-event)
-- [ ] Troubleshooting: capture SCDF error responses; suggest remediation
+- [X] Register apps in SCDF using stream manager (GitHub-hosted JARs)
+- [X] Create and deploy tap-based streams; verify status transitions
+- [X] Enhanced OAuth2 authentication with token persistence and refresh
+- [X] Unified configuration structure (config.yml + config-<streamname>.yml)
+- [X] Interactive stream manager with deployment option
+- [ ] End-to-end validation with external telemetry generator
+- [ ] Troubleshooting guide: capture SCDF error responses; suggest remediation
 
 ## Phase: Documentation & Ops
 - [ ] Health/readiness notes and logging guidance (levels, DLQ, retries)

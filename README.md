@@ -46,16 +46,112 @@ mvn clean package
 
 ## Stream Manager
 
+### Configuration Structure
+
+**`config.yml`** - Global SCDF settings + environment defaults
+- SCDF server URL and OAuth endpoints  
+- Default HDFS and version settings
+- Shared across all stream operations
+- RabbitMQ auto-configured by Cloud Foundry service bindings
+
+**`stream-configs/`** - Directory containing stream-specific configurations
+- `telemetry-streams.yml` - Telemetry processing streams configuration
+- Each file contains app definitions, stream definitions, and deployment properties
+- Follows SCDF-RAG pattern with comprehensive deployment settings
+
+### Usage
+
 ```bash
 cd imc-stream-manager
-cp scdf-config.yaml.template scdf-config.yml  # or use global config.yml and per-stream configs
-# Edit SCDF endpoints and app GitHub URLs
+
+# Edit global settings
+vi config.yml
 
 # Interactive manager
 bash stream-manager.sh
 
-# Non-interactive
+# Menu options:
+# 1) Register default apps (global)
+# 2) Create a new stream config
+#    - Telemetry Streams (tap-based architecture) 
+#    - Custom Stream
+# 3) List configured streams  
+# 4) Manage an existing stream
+# 5) Deploy Streams (general deployment from stream-configs/)
+# 6) Register custom app by GitHub URL
+
+# Non-interactive mode
 NO_PROMPT=true TOKEN=... bash stream-manager.sh
+```
+
+## SCDF Integration
+
+### Stream Architecture
+
+The system implements a **tap-based architecture** for efficient event processing and distribution:
+
+#### Main Telemetry Stream: `telemetry-to-hdfs`
+```bash
+# All telemetry data is fanned out from the telematics_exchange to the HDFS sink
+:telematics_exchange > imc-hdfs-sink
+```
+
+#### Event Processing Stream: `telemetry-to-processor`
+```bash
+# Telemetry data is also fanned out to the processor, which filters for accidents and sends them to a JDBC sink
+:telematics_exchange > imc-telemetry-processor > jdbc
+```
+
+#### Tap Stream for Debugging: `vehicle-events-to-log`
+```bash
+# A tap on the processor's output sends the filtered accident data to a log sink for debugging
+:telemetry-to-processor.imc-telemetry-processor > log
+```
+
+### Deployment Steps
+
+1. **Register Applications**:
+   ```bash
+   cd imc-stream-manager
+   ./stream-manager.sh
+   # Select: Register Applications → Custom GitHub Apps
+   ```
+
+2. **Create Streams**:
+   ```bash
+   # Create streams and deploy using the stream-manager.sh script
+   # The script will read the definitions from stream-configs/telemetry-streams.yml
+   # and deploy all streams in one operation.
+   ```
+
+3. **Deploy Streams**:
+   ```bash
+   # Use the stream-manager.sh script to deploy the streams.
+   # Select option 5) Deploy Streams
+   ```
+
+4. **Monitor**:
+   - **SCDF UI**: Stream status, metrics, logs
+   - **RabbitMQ UI**: Queue depths, message rates  
+   - **Actuator Endpoints**: Application health and custom metrics
+
+### Data Flow
+
+```
+External Telemetry Generator
+           ↓
+   telematics_exchange (fanout)
+           ├─────────────────┐
+           ↓                 ↓
+    ┌─────────────────┐   ┌─────────────────┐
+    │ imc-hdfs-sink   │   │ imc-telemetry-  │ → JDBC Sink (for storage)
+    │ (for archival)  │   │ processor       │
+    └─────────────────┘   └─────────────────┘
+                             ↓ (tap)
+                      ┌─────────────────┐
+                      │ Log Sink        │
+                      │ (for debugging) │
+                      └─────────────────┘
 ```
 
 ## Message Format
@@ -123,6 +219,8 @@ Both apps expose actuator endpoints (health, info, metrics). Example queries:
 
 - Telemetry processor: `imc-telemetry-processor/src/main/resources/application.yml.template`
 - HDFS sink: `imc-hdfs-sink/src/main/resources/application.yml.template`
-- Stream manager: `imc-stream-manager/scdf-config.yaml.template` (copy to `config.yml` and create per-stream `config-<name>.yml` as needed)
+- Stream manager: 
+  - `imc-stream-manager/config.yml` - Global SCDF and environment settings
+  - `imc-stream-manager/config-<streamname>.yml` - Stream-specific configurations
 
-These templates use environment variables for sensitive configuration values. The actual `*.yml` files are ignored by git to prevent accidentally committing secrets.
+The stream manager uses a unified configuration approach with global settings in `config.yml` and stream-specific settings in `config-<streamname>.yml` files.
