@@ -213,13 +213,11 @@ public class HdfsSink implements Consumer<byte[]> {
         
         while (retryCount <= maxRetries) {
             try {
-                ensureWriterExists();
+                // Use first message for partition evaluation before creating writer
+                String firstMessage = batch.isEmpty() ? null : batch.get(0);
+                ensureWriterExists(firstMessage);
                 
                 for (String message : batch) {
-                    // Store the first message for partition path evaluation
-                    if (lastMessageForPartitioning == null && !message.trim().isEmpty()) {
-                        lastMessageForPartitioning = message;
-                    }
                     writeMessage(message);
                     currentFileMessageCount++;
                 }
@@ -258,6 +256,16 @@ public class HdfsSink implements Consumer<byte[]> {
     
     private void ensureWriterExists() throws IOException {
         if (currentWriter == null) {
+            createNewWriter();
+        }
+    }
+    
+    private void ensureWriterExists(String sampleMessage) throws IOException {
+        if (currentWriter == null) {
+            // Set sample message before creating writer for partition evaluation
+            if (lastMessageForPartitioning == null && sampleMessage != null && !sampleMessage.trim().isEmpty()) {
+                lastMessageForPartitioning = sampleMessage;
+            }
             createNewWriter();
         }
     }
@@ -310,33 +318,39 @@ public class HdfsSink implements Consumer<byte[]> {
             result = result.replace("T(java.time.LocalDate).now().toString()", "'" + LocalDate.now().toString() + "'");
         }
         
-        // Parse JSON to extract payload values
+        // Parse JSON to extract payload values BEFORE string concatenation cleanup
         if (result.contains("payload.") && lastMessageForPartitioning != null) {
             try {
                 JsonNode jsonNode = objectMapper.readTree(lastMessageForPartitioning);
+                log.debug("Parsing JSON for partition evaluation: {}", lastMessageForPartitioning);
                 
                 // Replace payload.driver_id with actual value from JSON
                 if (result.contains("payload.driver_id")) {
                     String driverId = extractJsonValue(jsonNode, "driver_id", "unknown");
-                    result = result.replace("payload.driver_id", driverId);
+                    log.debug("Extracted driver_id: {}", driverId);
+                    result = result.replace("payload.driver_id", "'" + driverId + "'");
                 }
                 
                 // Add support for other payload fields if needed
                 if (result.contains("payload.vehicle_id")) {
                     String vehicleId = extractJsonValue(jsonNode, "vehicle_id", "unknown");
-                    result = result.replace("payload.vehicle_id", vehicleId);
+                    result = result.replace("payload.vehicle_id", "'" + vehicleId + "'");
                 }
                 
                 if (result.contains("payload.policy_id")) {
                     String policyId = extractJsonValue(jsonNode, "policy_id", "unknown");
-                    result = result.replace("payload.policy_id", policyId);
+                    result = result.replace("payload.policy_id", "'" + policyId + "'");
                 }
                 
             } catch (Exception e) {
                 log.warn("Failed to parse JSON for partition path evaluation: {}", e.getMessage());
                 // Fallback: replace any remaining payload.* with "unknown"
-                result = result.replaceAll("payload\\.[a-zA-Z_][a-zA-Z0-9_]*", "unknown");
+                result = result.replaceAll("payload\\.[a-zA-Z_][a-zA-Z0-9_]*", "'unknown'");
             }
+        } else if (result.contains("payload.")) {
+            // No message available for parsing, use fallback
+            log.warn("No message available for partition path evaluation, using fallback");
+            result = result.replaceAll("payload\\.[a-zA-Z_][a-zA-Z0-9_]*", "'unknown'");
         }
         
         // Basic SpEL-like evaluation - remove quotes and plus signs for concatenation
