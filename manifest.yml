@@ -5,7 +5,7 @@ applications:
   instances: 1
   buildpacks:
     - java_buildpack_offline
-  path: ./imc-hdfs-sink/target/imc-hdfs-sink-3.2.0.jar
+  path: ./imc-hdfs-sink/target/imc-hdfs-sink-3.3.0.jar
   env:
     SPRING_PROFILES_ACTIVE: cloud
     JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 21.+ } }'
