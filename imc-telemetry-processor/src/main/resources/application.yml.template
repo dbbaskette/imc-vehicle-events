@@ -21,6 +21,9 @@ spring:
               auto-bind-dlq: true
               durable-subscription: true
               max-attempts: 3
+          vehicleEventsOut-out-0:
+            producer:
+              requiredGroups: ${VEHICLE_EVENTS_OUTPUT_GROUP:vehicle-events-group}
 management:
   endpoints:
     web:

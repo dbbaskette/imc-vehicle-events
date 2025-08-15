@@ -1,0 +1,8 @@
+# OAuth token and credentials (sensitive)
+.cf_token
+.cf_client_id
+.cf_client_secret
+
+# Local environment overrides
+.env*.yml
+*.properties

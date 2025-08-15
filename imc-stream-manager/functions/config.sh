@@ -20,10 +20,14 @@ load_configuration() {
     log_error "Config file not found: $config_file"
     return 1
   fi
-  export SCDF_URL=$(yq -r '.scdf.url' "$config_file")
-  export SCDF_TOKEN_URL=$(yq -r '.scdf.token_url' "$config_file")
-  export STREAM_NAME=$(yq -r '.stream.name' "$config_file")
-  export STREAM_DEF=$(yq -r '.stream.definition' "$config_file")
+  # Handle both legacy format and new default: format
+  export SCDF_URL=$(yq -r '.default.scdf.url // .scdf.url // "https://dataflow.example.com"' "$config_file")
+  export SCDF_TOKEN_URL=$(yq -r '.default.scdf.token_url // .scdf.token_url // "https://login.example.com/oauth/token"' "$config_file")
+  
+  # For scripts that might need a "primary" or first stream name/def
+  export STREAM_NAME=$(yq e '.streams[0].name // ""' "$config_file")
+  export STREAM_DEF=$(yq e '.streams[0].definition // ""' "$config_file")
+  
   CONFIG_LOADED=true
   CONFIG_ENVIRONMENT="$env"
   return 0
@@ -69,9 +73,9 @@ apps:
     type: sink
     github_url: "https://github.com/your-org/imc-hdfs-sink"
 
-stream:
-  name: "$name"
-  definition: "$def"
+streams:
+  - name: "$name"
+    definition: "$def"
 YAML
   add_stream_to_index "$name" "$file"
   echo "$file"
