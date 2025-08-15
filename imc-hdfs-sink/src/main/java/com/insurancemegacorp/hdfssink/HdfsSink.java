@@ -57,6 +57,7 @@ public class HdfsSink implements Consumer<byte[]> {
     private String currentFilePath;
     private long currentFileStartTime;
     private int currentFileMessageCount = 0;
+    private String lastMessageForPartitioning = null;
 
     @Value("${hdfs.namenodeUri:hdfs://namenode:8020}")
     private String namenodeUri;
@@ -215,6 +216,10 @@ public class HdfsSink implements Consumer<byte[]> {
                 ensureWriterExists();
                 
                 for (String message : batch) {
+                    // Store the first message for partition path evaluation
+                    if (lastMessageForPartitioning == null && !message.trim().isEmpty()) {
+                        lastMessageForPartitioning = message;
+                    }
                     writeMessage(message);
                     currentFileMessageCount++;
                 }
@@ -284,6 +289,7 @@ public class HdfsSink implements Consumer<byte[]> {
                 
         currentFileStartTime = System.currentTimeMillis();
         currentFileMessageCount = 0;
+        lastMessageForPartitioning = null; // Reset for new file partitioning
         
         log.info("Created new HDFS Parquet writer: {}", currentFilePath);
         meterRegistry.counter("hdfs_files_created_total").increment();
@@ -296,8 +302,7 @@ public class HdfsSink implements Consumer<byte[]> {
             return "date=" + date;
         }
         
-        // For now, implement basic template substitution
-        // In the future, this could be enhanced with SpEL evaluation
+        // Start with the template
         String result = partitionPathTemplate;
         
         // Replace date placeholder
@@ -305,17 +310,54 @@ public class HdfsSink implements Consumer<byte[]> {
             result = result.replace("T(java.time.LocalDate).now().toString()", "'" + LocalDate.now().toString() + "'");
         }
         
+        // Parse JSON to extract payload values
+        if (result.contains("payload.") && lastMessageForPartitioning != null) {
+            try {
+                JsonNode jsonNode = objectMapper.readTree(lastMessageForPartitioning);
+                
+                // Replace payload.driver_id with actual value from JSON
+                if (result.contains("payload.driver_id")) {
+                    String driverId = extractJsonValue(jsonNode, "driver_id", "unknown");
+                    result = result.replace("payload.driver_id", driverId);
+                }
+                
+                // Add support for other payload fields if needed
+                if (result.contains("payload.vehicle_id")) {
+                    String vehicleId = extractJsonValue(jsonNode, "vehicle_id", "unknown");
+                    result = result.replace("payload.vehicle_id", vehicleId);
+                }
+                
+                if (result.contains("payload.policy_id")) {
+                    String policyId = extractJsonValue(jsonNode, "policy_id", "unknown");
+                    result = result.replace("payload.policy_id", policyId);
+                }
+                
+            } catch (Exception e) {
+                log.warn("Failed to parse JSON for partition path evaluation: {}", e.getMessage());
+                // Fallback: replace any remaining payload.* with "unknown"
+                result = result.replaceAll("payload\\.[a-zA-Z_][a-zA-Z0-9_]*", "unknown");
+            }
+        }
+        
         // Basic SpEL-like evaluation - remove quotes and plus signs for concatenation
         result = result.replaceAll("'([^']*)'\\s*\\+\\s*", "$1");
         result = result.replaceAll("\\+\\s*'([^']*)'", "$1");
         result = result.replaceAll("'([^']*)'", "$1");
         
-        // Handle payload.driver_id placeholder - for now use a default until we can parse the actual message
-        if (result.contains("payload.driver_id")) {
-            result = result.replace("payload.driver_id", "unknown");
-        }
-        
+        log.debug("Evaluated partition path: {}", result);
         return result;
+    }
+    
+    private String extractJsonValue(JsonNode jsonNode, String fieldName, String defaultValue) {
+        JsonNode fieldNode = jsonNode.get(fieldName);
+        if (fieldNode != null && !fieldNode.isNull()) {
+            if (fieldNode.isTextual()) {
+                return fieldNode.asText();
+            } else {
+                return fieldNode.toString();
+            }
+        }
+        return defaultValue;
     }
     
     private void writeMessage(String message) throws IOException {
