@@ -13,7 +13,7 @@
 
     <groupId>com.insurancemegacorp</groupId>
     <artifactId>imc-hdfs-sink</artifactId>
-    <version>4.0.0</version>
+    <version>4.1.0</version>
     <name>imc-hdfs-sink</name>
     <description>Spring Cloud Stream sink that writes telemetry JSON to HDFS as Parquet</description>
 

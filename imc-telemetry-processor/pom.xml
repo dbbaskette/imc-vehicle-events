@@ -13,7 +13,7 @@
 
     <groupId>com.insurancemegacorp</groupId>
     <artifactId>imc-telemetry-processor</artifactId>
-    <version>4.0.0</version>
+    <version>4.1.0</version>
     <name>imc-telemetry-processor</name>
     <description>Spring Cloud Stream processor for telemetry crash detection</description>
 
