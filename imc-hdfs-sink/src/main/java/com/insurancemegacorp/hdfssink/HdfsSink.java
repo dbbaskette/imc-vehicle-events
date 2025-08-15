@@ -325,13 +325,17 @@ public class HdfsSink implements Consumer<byte[]> {
         if (result.contains("payload.") && lastMessageForPartitioning != null) {
             try {
                 JsonNode jsonNode = objectMapper.readTree(lastMessageForPartitioning);
-                log.debug("Parsing JSON for partition evaluation: {}", lastMessageForPartitioning);
+                log.info("DEBUG: Full JSON message for partition evaluation: {}", lastMessageForPartitioning);
+                log.info("DEBUG: JSON keys available: {}", jsonNode.fieldNames());
                 
                 // Replace payload.driver_id with actual value from JSON
                 if (result.contains("payload.driver_id")) {
                     String driverId = extractJsonValue(jsonNode, "driver_id", "unknown");
-                    log.debug("Extracted driver_id: {}", driverId);
+                    log.info("DEBUG: Raw JSON driver_id field: {}", jsonNode.get("driver_id"));
+                    log.info("DEBUG: Extracted driver_id value: '{}'", driverId);
+                    log.info("DEBUG: driver_id value type: {}", driverId.getClass().getSimpleName());
                     result = result.replace("payload.driver_id", "'" + driverId + "'");
+                    log.info("DEBUG: Partition path after driver_id substitution: {}", result);
                 }
                 
                 // Add support for other payload fields if needed
