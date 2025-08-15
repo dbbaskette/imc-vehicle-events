@@ -107,6 +107,9 @@ public class HdfsSink implements Consumer<byte[]> {
     @Value("${hdfs.replicationFactor:3}")
     private short replicationFactor;
     
+    @Value("${hdfs.forceFlush:false}")
+    private boolean forceFlush;
+    
     public HdfsSink(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
         this.hadoopConf = new Configuration(); // Initialize empty, will be configured in @PostConstruct
@@ -384,6 +387,12 @@ public class HdfsSink implements Consumer<byte[]> {
         Group group = new SimpleGroup(schema);
         group.add("raw_json", message);
         currentWriter.write(group);
+        
+        // Force flush for immediate visibility in demo mode
+        if (forceFlush) {
+            currentWriter.close();
+            currentWriter = null; // Will be recreated on next write
+        }
     }
     
     private void checkFileRolling() {
