@@ -88,18 +88,24 @@ NO_PROMPT=true TOKEN=... bash stream-manager.sh
 
 ### Stream Architecture
 
-The system implements a **tap-based architecture** for efficient telemetry processing:
+The system implements a **tap-based architecture** for efficient event processing and distribution:
 
-#### Main Stream: `telemetry-to-hdfs`
+#### Main Telemetry Stream: `telemetry-to-hdfs`
 ```bash
-# All telemetry data flows to HDFS for long-term storage
-rabbit --queues=telematics_work_queue --groups=crash-detection-group | imc-hdfs-sink
+# All telemetry data is fanned out from the telematics_exchange to the HDFS sink
+:telematics_exchange > imc-hdfs-sink
 ```
 
-#### Tap Stream: `accident-detection`  
+#### Event Processing Stream: `telemetry-to-processor`
 ```bash
-# Only accident events (g_force > threshold) flow to vehicle-events queue
-:telemetry-to-hdfs.rabbit > imc-telemetry-processor | rabbit --queues=vehicle_events --groups=vehicle-events-group
+# Telemetry data is also fanned out to the processor, which filters for accidents and sends them to a JDBC sink
+:telematics_exchange > imc-telemetry-processor > jdbc
+```
+
+#### Tap Stream for Debugging: `vehicle-events-to-log`
+```bash
+# A tap on the processor's output sends the filtered accident data to a log sink for debugging
+:telemetry-to-processor.imc-telemetry-processor > log
 ```
 
 ### Deployment Steps
@@ -113,17 +119,15 @@ rabbit --queues=telematics_work_queue --groups=crash-detection-group | imc-hdfs-
 
 2. **Create Streams**:
    ```bash
-   # Create main storage stream
-   stream create telemetry-to-hdfs --definition "rabbit --queues=telematics_work_queue --groups=crash-detection-group | imc-hdfs-sink"
-   
-   # Create accident detection tap
-   stream create accident-detection --definition ":telemetry-to-hdfs.rabbit > imc-telemetry-processor | rabbit --queues=vehicle_events --groups=vehicle-events-group"
+   # Create streams and deploy using the stream-manager.sh script
+   # The script will read the definitions from stream-configs/telemetry-streams.yml
+   # and deploy all streams in one operation.
    ```
 
 3. **Deploy Streams**:
    ```bash
-   stream deploy telemetry-to-hdfs
-   stream deploy accident-detection
+   # Use the stream-manager.sh script to deploy the streams.
+   # Select option 5) Deploy Streams
    ```
 
 4. **Monitor**:
@@ -136,19 +140,18 @@ rabbit --queues=telematics_work_queue --groups=crash-detection-group | imc-hdfs-
 ```
 External Telemetry Generator
            ↓
-   telematics_work_queue
-           ↓
-    ┌─────────────────┐
-    │ Main Stream     │ → HDFS (all telemetry)
-    │ telemetry-to-   │
-    │ hdfs            │
-    └─────────────────┘
-           ↓ (tap)
-    ┌─────────────────┐
-    │ Tap Stream      │ → vehicle_events (accidents only)
-    │ accident-       │
-    │ detection       │
-    └─────────────────┘
+   telematics_exchange (fanout)
+           ├─────────────────┐
+           ↓                 ↓
+    ┌─────────────────┐   ┌─────────────────┐
+    │ imc-hdfs-sink   │   │ imc-telemetry-  │ → JDBC Sink (for storage)
+    │ (for archival)  │   │ processor       │
+    └─────────────────┘   └─────────────────┘
+                             ↓ (tap)
+                      ┌─────────────────┐
+                      │ Log Sink        │
+                      │ (for debugging) │
+                      └─────────────────┘
 ```
 
 ## Message Format

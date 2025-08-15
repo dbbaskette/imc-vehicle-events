@@ -33,3 +33,6 @@ imc-stream-manager/config.yml
 imc-stream-manager/config-*.yml
 imc-stream-manager/streams-index.yml
 **/src/main/resources/spark-processor.conf*.properties
+imc-stream-manager/stream-configs/*.yml
+!imc-stream-manager/stream-configs/*.yml.template
+imc-stream-manager/stream-configs/telemetry-streams.yml
