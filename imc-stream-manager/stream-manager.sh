@@ -463,8 +463,8 @@ cleanup_hdfs_data() {
       # Use hdfs command to delete the directory and skip trash
       if command -v hdfs >/dev/null 2>&1; then
         echo "Using hdfs command..."
-        echo "Running: hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
-        if hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/; then
+        echo "Running: HADOOP_USER_NAME=$hdfs_user hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
+        if HADOOP_USER_NAME="$hdfs_user" hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/; then
           log_success "HDFS cleanup completed successfully"
         else
           echo -e "${C_YELLOW}HDFS delete command failed or directory was already empty${C_RESET}"
