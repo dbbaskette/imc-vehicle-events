@@ -23,9 +23,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
 @SpringBootTest(properties = {
-        "spring.cloud.function.definition=vehicleEventsOut",
+        "spring.cloud.function.definition=vehicleEventsOut;testSink",
         "telemetry.accident.gforce.threshold=5.0",
-        "spring.cloud.stream.bindings.vehicleEventsOut-out-0.destination=vehicle_events"
+        "spring.cloud.stream.bindings.vehicleEventsOut-in-0.destination=flattened_telemetry_exchange",
+        "spring.cloud.stream.bindings.vehicleEventsOut-out-0.destination=vehicle_events",
+        "spring.cloud.stream.bindings.testSink-in-0.destination=vehicle_events"
 })
 class TelemetryProcessorTest {
 
@@ -53,15 +55,16 @@ class TelemetryProcessorTest {
 
     @Test
     void emitsVehicleEventWhenGForceAboveThreshold() throws Exception {
-        String json = "{\"g_force\": 6.2, \"policy_id\":1, \"vehicle_id\":2, \"sensors\":{\"gps\":{\"latitude\":1.0,\"longitude\":2.0}}}";
-        streamBridge.send("vehicleEventsOut-in-0", json.getBytes());
+        // Send flattened JSON as the processor now expects pre-flattened input with contextual field names
+        String flattenedJson = "{\"g_force\": 6.2, \"policy_id\":1, \"vehicle_id\":2, \"gps_latitude\":1.0, \"gps_longitude\":2.0}";
+        streamBridge.send("vehicleEventsOut-in-0", flattenedJson.getBytes());
 
         Message<?> out = queue.poll(2, TimeUnit.SECONDS);
         assertThat(out).isNotNull();
         String outStr = new String((byte[]) out.getPayload());
         assertThat(outStr).contains("\"g_force\":6.2");
-        assertThat(outStr).contains("\"latitude\":1.0");
-        assertThat(outStr).contains("\"longitude\":2.0");
+        assertThat(outStr).contains("\"gps_latitude\":1.0");
+        assertThat(outStr).contains("\"gps_longitude\":2.0");
     }
 
     @Test
