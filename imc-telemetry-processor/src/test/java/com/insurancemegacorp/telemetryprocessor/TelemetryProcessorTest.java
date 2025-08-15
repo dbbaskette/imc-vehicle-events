@@ -23,11 +23,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
 @SpringBootTest(properties = {
-        "spring.cloud.function.definition=vehicleEventsOut;testSink",
+        "spring.cloud.function.definition=vehicleEventsOut,testSink",
         "telemetry.accident.gforce.threshold=5.0",
         "spring.cloud.stream.bindings.vehicleEventsOut-in-0.destination=telematics_exchange",
         "spring.cloud.stream.bindings.vehicleEventsOut-out-0.destination=vehicle_events",
-        "spring.cloud.stream.bindings.testSink-in-0.destination=vehicle_events"
+        "spring.cloud.stream.bindings.testSink-in-0.destination=vehicle_events",
+        "spring.cloud.stream.rabbit.bindings.vehicleEventsOut-in-0.consumer.exchangeType=fanout",
+        "spring.cloud.stream.rabbit.bindings.vehicleEventsOut-out-0.producer.exchangeType=fanout",
+        "spring.cloud.stream.rabbit.bindings.testSink-in-0.consumer.exchangeType=fanout",
+        "spring.cloud.stream.rabbit.default.producer.exchangeType=fanout"
 })
 class TelemetryProcessorTest {
 
@@ -92,9 +96,12 @@ class TelemetryProcessorTest {
               "device_screen_on": false,
               "device_charging": true
             }""";
-        streamBridge.send("vehicleEventsOut-in-0", flattenedJson.getBytes());
+        
+        // Wait a moment for consumer to be ready
+        Thread.sleep(500);
+        streamBridge.send("telematics_exchange", flattenedJson.getBytes());
 
-        Message<?> out = queue.poll(2, TimeUnit.SECONDS);
+        Message<?> out = queue.poll(5, TimeUnit.SECONDS);
         assertThat(out).isNotNull();
         String outStr = new String((byte[]) out.getPayload());
         assertThat(outStr).contains("\"g_force\":6.2");
@@ -107,7 +114,7 @@ class TelemetryProcessorTest {
     @Test
     void dropsWhenBelowThreshold() throws Exception {
         String json = "{\"g_force\": 1.2}";
-        streamBridge.send("vehicleEventsOut-in-0", json.getBytes());
+        streamBridge.send("telematics_exchange", json.getBytes());
 
         Message<?> out = queue.poll(200, TimeUnit.MILLISECONDS);
         assertThat(out).isNull();
