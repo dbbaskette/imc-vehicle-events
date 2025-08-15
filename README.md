@@ -151,19 +151,13 @@ External Telemetry Generator
            ↓                     ↓
     ┌─────────────────┐   ┌─────────────────┐
     │ imc-hdfs-sink   │   │ imc-telemetry-  │ → :vehicle_events
-    │ (all data)      │   │ processor       │
-    │                 │   │ (accidents only)│
-    └─────────────────┘   └─────────────────┘
-                                 ↓
-                          ┌─────────────────┐
-                          │ JDBC Sink       │
-                          │ (database)      │
-                          └─────────────────┘
-                                 ↓ (tap)
-                          ┌─────────────────┐
-                          │ Log Sink        │
-                          │ (debugging)     │
-                          └─────────────────┘
+    │ (all data)      │   │ processor       │     ↓
+    │ → HDFS Parquet  │   │ (accidents only)│     ├─────────────────┐
+    └─────────────────┘   └─────────────────┘     ↓                 ↓ (tap)
+                                           ┌─────────────────┐ ┌─────────────────┐
+                                           │ JDBC Sink       │ │ Log Sink        │
+                                           │ (database)      │ │ (debugging)     │
+                                           └─────────────────┘ └─────────────────┘
 ```
 
 ## HDFS Storage
