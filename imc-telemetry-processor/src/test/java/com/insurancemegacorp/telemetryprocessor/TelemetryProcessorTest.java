@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(properties = {
         "spring.cloud.function.definition=vehicleEventsOut;testSink",
         "telemetry.accident.gforce.threshold=5.0",
-        "spring.cloud.stream.bindings.vehicleEventsOut-in-0.destination=flattened_telemetry_exchange",
+        "spring.cloud.stream.bindings.vehicleEventsOut-in-0.destination=telematics_exchange",
         "spring.cloud.stream.bindings.vehicleEventsOut-out-0.destination=vehicle_events",
         "spring.cloud.stream.bindings.testSink-in-0.destination=vehicle_events"
 })
@@ -55,16 +55,53 @@ class TelemetryProcessorTest {
 
     @Test
     void emitsVehicleEventWhenGForceAboveThreshold() throws Exception {
-        // Send flattened JSON as the processor now expects pre-flattened input with contextual field names
-        String flattenedJson = "{\"g_force\": 6.2, \"policy_id\":1, \"vehicle_id\":2, \"gps_latitude\":1.0, \"gps_longitude\":2.0}";
+        // Send complete flat JSON matching new schema
+        String flattenedJson = """
+            {
+              "policy_id": 200018,
+              "vehicle_id": 300021,
+              "vin": "1HGBH41JXMN109186",
+              "event_time": "2024-01-15T10:30:45.123Z",
+              "speed_mph": 32.5,
+              "speed_limit_mph": 35,
+              "current_street": "Peachtree Street",
+              "g_force": 6.2,
+              "driver_id": 400018,
+              "gps_latitude": 33.7701,
+              "gps_longitude": -84.3876,
+              "gps_altitude": 351.59,
+              "gps_speed": 14.5,
+              "gps_bearing": 148.37,
+              "gps_accuracy": 2.64,
+              "gps_satellite_count": 11,
+              "gps_fix_time": 150,
+              "accelerometer_x": 0.1234,
+              "accelerometer_y": -0.0567,
+              "accelerometer_z": 0.9876,
+              "gyroscope_x": 0.02,
+              "gyroscope_y": -0.01,
+              "gyroscope_z": 0.15,
+              "magnetometer_x": 25.74,
+              "magnetometer_y": -8.73,
+              "magnetometer_z": 40.51,
+              "magnetometer_heading": 148.37,
+              "barometric_pressure": 1013.25,
+              "device_battery_level": 82,
+              "device_signal_strength": -63,
+              "device_orientation": "portrait",
+              "device_screen_on": false,
+              "device_charging": true
+            }""";
         streamBridge.send("vehicleEventsOut-in-0", flattenedJson.getBytes());
 
         Message<?> out = queue.poll(2, TimeUnit.SECONDS);
         assertThat(out).isNotNull();
         String outStr = new String((byte[]) out.getPayload());
         assertThat(outStr).contains("\"g_force\":6.2");
-        assertThat(outStr).contains("\"gps_latitude\":1.0");
-        assertThat(outStr).contains("\"gps_longitude\":2.0");
+        assertThat(outStr).contains("\"driver_id\":400018");
+        assertThat(outStr).contains("\"event_time\":\"2024-01-15T10:30:45.123Z\"");
+        assertThat(outStr).contains("\"gps_latitude\":33.7701");
+        assertThat(outStr).contains("\"device_battery_level\":82");
     }
 
     @Test
