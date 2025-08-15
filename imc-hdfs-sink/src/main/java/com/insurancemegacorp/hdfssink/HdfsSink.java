@@ -21,6 +21,8 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.PostConstruct;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.net.URI;
@@ -46,6 +48,7 @@ public class HdfsSink implements Consumer<byte[]> {
     
     private final MeterRegistry meterRegistry;
     private final Configuration hadoopConf;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final BlockingQueue<String> messageQueue = new LinkedBlockingQueue<>(); 
     private final AtomicBoolean shutdownRequested = new AtomicBoolean(false);
     private final AtomicLong messagesReceived = new AtomicLong(0);
@@ -96,6 +99,12 @@ public class HdfsSink implements Consumer<byte[]> {
     
     @Value("${hdfs.user:hdfs}")
     private String hdfsUser;
+    
+    @Value("${hdfs.partitionPath:}")
+    private String partitionPathTemplate;
+    
+    @Value("${hdfs.replicationFactor:3}")
+    private short replicationFactor;
     
     public HdfsSink(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -252,8 +261,8 @@ public class HdfsSink implements Consumer<byte[]> {
         closeCurrentWriter();
         
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        String date = LocalDate.now().toString();
-        Path dir = new Path(outputPath + "/date=" + date);
+        String partitionDir = evaluatePartitionPath();
+        Path dir = new Path(outputPath + "/" + partitionDir);
         currentFilePath = dir + "/telemetry-" + timestamp + "-" + System.currentTimeMillis() + ".parquet";
         Path file = new Path(currentFilePath);
         
@@ -262,6 +271,9 @@ public class HdfsSink implements Consumer<byte[]> {
         
         Configuration writerConf = new Configuration(hadoopConf);
         GroupWriteSupport.setSchema(schema, writerConf);
+        
+        // Set replication factor
+        writerConf.setInt("dfs.replication", replicationFactor);
         
         currentWriter = org.apache.parquet.hadoop.example.ExampleParquetWriter.builder(file)
                 .withConf(writerConf)
@@ -275,6 +287,35 @@ public class HdfsSink implements Consumer<byte[]> {
         
         log.info("Created new HDFS Parquet writer: {}", currentFilePath);
         meterRegistry.counter("hdfs_files_created_total").increment();
+    }
+    
+    private String evaluatePartitionPath() {
+        // If no custom partition path is configured, use default date partitioning
+        if (partitionPathTemplate == null || partitionPathTemplate.trim().isEmpty()) {
+            String date = LocalDate.now().toString();
+            return "date=" + date;
+        }
+        
+        // For now, implement basic template substitution
+        // In the future, this could be enhanced with SpEL evaluation
+        String result = partitionPathTemplate;
+        
+        // Replace date placeholder
+        if (result.contains("T(java.time.LocalDate).now().toString()")) {
+            result = result.replace("T(java.time.LocalDate).now().toString()", "'" + LocalDate.now().toString() + "'");
+        }
+        
+        // Basic SpEL-like evaluation - remove quotes and plus signs for concatenation
+        result = result.replaceAll("'([^']*)'\\s*\\+\\s*", "$1");
+        result = result.replaceAll("\\+\\s*'([^']*)'", "$1");
+        result = result.replaceAll("'([^']*)'", "$1");
+        
+        // Handle payload.driver_id placeholder - for now use a default until we can parse the actual message
+        if (result.contains("payload.driver_id")) {
+            result = result.replace("payload.driver_id", "unknown");
+        }
+        
+        return result;
     }
     
     private void writeMessage(String message) throws IOException {
