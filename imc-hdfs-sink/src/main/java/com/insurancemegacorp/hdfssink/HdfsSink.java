@@ -368,19 +368,11 @@ public class HdfsSink implements Consumer<byte[]> {
     private String extractJsonValue(JsonNode jsonNode, String fieldName, String defaultValue) {
         JsonNode fieldNode = jsonNode.get(fieldName);
         if (fieldNode != null && !fieldNode.isNull()) {
-            String value;
             if (fieldNode.isTextual()) {
-                value = fieldNode.asText();
+                return fieldNode.asText();
             } else {
-                value = fieldNode.toString();
+                return fieldNode.toString();
             }
-            
-            // Clean up driver_id by removing DRIVER- prefix
-            if ("driver_id".equals(fieldName) && value.startsWith("DRIVER-")) {
-                value = value.substring(7); // Remove "DRIVER-" prefix
-            }
-            
-            return value;
         }
         return defaultValue;
     }
