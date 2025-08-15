@@ -1,8 +1,7 @@
 # IMC Telemetry Stream (SCDF)
 
 Multi-module project containing:
-- `imc-telemetry-flattener`: Spring Cloud Stream processor that flattens nested telemetry JSON to improve performance and maintainability.
-- `imc-telemetry-processor`: Spring Cloud Stream processor that processes flattened telemetry and emits vehicle events for accidents (g_force > threshold).
+- `imc-telemetry-processor`: Spring Cloud Stream processor that filters flattened telemetry for accidents (g_force > threshold).
 - `imc-hdfs-sink`: Spring Cloud Stream sink that writes flattened telemetry JSON to HDFS as Parquet (partitioned by date and driver).
 - `imc-stream-manager`: SCDF stream manager scripts and configs.
 
@@ -14,18 +13,11 @@ Multi-module project containing:
 
 ## App Templates
 
-Telemetry Flattener:
-```bash
-cd imc-telemetry-flattener/src/main/resources
-cp application.yml.template application.yml
-# Configure TELEMETRY_INPUT_EXCHANGE, FLATTENED_TELEMETRY_OUTPUT_EXCHANGE
-```
-
 Telemetry Processor:
 ```bash
 cd imc-telemetry-processor/src/main/resources
 cp application.yml.template application.yml
-# Configure TELEMETRY_INPUT_EXCHANGE (flattened), VEHICLE_EVENTS_OUTPUT_EXCHANGE, VEHICLE_EVENT_GFORCE_THRESHOLD
+# Configure TELEMETRY_INPUT_EXCHANGE (flat JSON), VEHICLE_EVENTS_OUTPUT_EXCHANGE, VEHICLE_EVENT_GFORCE_THRESHOLD
 ```
 
 HDFS Sink:
@@ -81,7 +73,7 @@ bash stream-manager.sh
 # Menu options:
 # 1) Register default apps (global)
 # 2) Create a new stream config
-#    - Telemetry Streams (tap-based architecture) 
+#    - Telemetry Streams (simplified fanout architecture) 
 #    - Custom Stream
 # 3) List configured streams  
 # 4) Manage an existing stream
@@ -96,24 +88,18 @@ NO_PROMPT=true TOKEN=... bash stream-manager.sh
 
 ### Stream Architecture
 
-The system implements a **dedicated flattener architecture** for improved performance and maintainability:
+The system implements a **simplified fanout architecture** with pre-flattened JSON input for optimal performance:
 
-#### Flattening Stream: `telemetry-to-flattener`
+#### HDFS Storage Stream: `telemetry-to-hdfs`
 ```bash
-# Raw nested JSON is flattened by the dedicated flattener service
-:telematics_exchange > imc-telemetry-flattener > :flattened_telemetry_exchange
+# All flattened telemetry data goes directly to HDFS for archival
+:telematics_exchange > imc-hdfs-sink
 ```
 
-#### HDFS Storage Stream: `flattened-to-hdfs`
-```bash
-# All flattened telemetry data goes to HDFS for archival
-:flattened_telemetry_exchange > imc-hdfs-sink
-```
-
-#### Accident Detection Stream: `flattened-to-processor`
+#### Accident Detection Stream: `telemetry-to-processor`
 ```bash
 # Flattened data is processed for accident detection and sent to database
-:flattened_telemetry_exchange > imc-telemetry-processor > :vehicle_events
+:telematics_exchange > imc-telemetry-processor > :vehicle_events
 ```
 
 #### Database Storage Stream: `vehicle-events-to-jdbc`
@@ -125,7 +111,7 @@ The system implements a **dedicated flattener architecture** for improved perfor
 #### Debug Stream: `vehicle-events-to-log`
 ```bash
 # A tap on the processor's output sends accident data to log for debugging
-:flattened-to-processor.imc-telemetry-processor > log
+:telemetry-to-processor.imc-telemetry-processor > log
 ```
 
 ### Deployment Steps
@@ -159,16 +145,8 @@ The system implements a **dedicated flattener architecture** for improved perfor
 
 ```
 External Telemetry Generator
-           ↓ (raw nested JSON)
-      telematics_exchange
-           ↓
-   ┌─────────────────────┐
-   │ imc-telemetry-      │
-   │ flattener           │
-   │ (dedicated service) │
-   └─────────────────────┘
-           ↓ (flattened JSON)
-  flattened_telemetry_exchange (fanout)
+           ↓ (pre-flattened JSON)
+      telematics_exchange (fanout)
            ├─────────────────────┐
            ↓                     ↓
     ┌─────────────────┐   ┌─────────────────┐
@@ -190,8 +168,8 @@ External Telemetry Generator
 
 ## Message Format
 
-### Input: Nested Telemetry JSON
-Enhanced telemetry message structure received from external generators:
+### Input: Pre-Flattened Telemetry JSON
+The telemetry generator now sends optimized flat JSON directly, eliminating transformation overhead:
 
 ```json
 {
@@ -203,64 +181,11 @@ Enhanced telemetry message structure received from external generators:
   "speed_limit_mph": 35,
   "current_street": "Peachtree Street",
   "g_force": 1.18,
-  "driver_id": "DRIVER-400018",
-  "sensors": {
-    "gps": {
-      "latitude": 33.7701,
-      "longitude": -84.3876,
-      "altitude": 351.59,
-      "speed_ms": 14.5,
-      "bearing": 148.37,
-      "accuracy": 2.64,
-      "satellite_count": 11,
-      "gps_fix_time": 150
-    },
-    "accelerometer": {
-      "x": 0.1234,
-      "y": -0.0567,
-      "z": 0.9876
-    },
-    "gyroscope": {
-      "pitch": 0.02,
-      "roll": -0.01,
-      "yaw": 0.15
-    },
-    "magnetometer": {
-      "x": 25.74,
-      "y": -8.73,
-      "z": 40.51,
-      "heading": 148.37
-    },
-    "barometric_pressure": 1013.25,
-    "device": {
-      "battery_level": 82.0,
-      "signal_strength": -63,
-      "orientation": "portrait",
-      "screen_on": false,
-      "charging": true
-    }
-  }
-}
-```
-
-### Output: Flattened Telemetry JSON
-Flattened structure with contextual field names produced by `imc-telemetry-flattener`:
-
-```json
-{
-  "policy_id": 200018,
-  "vehicle_id": 300021,
-  "vin": "1HGBH41JXMN109186",
-  "event_time": "2024-01-15T10:30:45.123Z",
-  "speed_mph": 32.5,
-  "speed_limit_mph": 35,
-  "current_street": "Peachtree Street",
-  "g_force": 1.18,
-  "driver_id": "DRIVER-400018",
+  "driver_id": 400018,
   "gps_latitude": 33.7701,
   "gps_longitude": -84.3876,
   "gps_altitude": 351.59,
-  "gps_speed_ms": 14.5,
+  "gps_speed": 14.5,
   "gps_bearing": 148.37,
   "gps_accuracy": 2.64,
   "gps_satellite_count": 11,
@@ -268,15 +193,15 @@ Flattened structure with contextual field names produced by `imc-telemetry-flatt
   "accelerometer_x": 0.1234,
   "accelerometer_y": -0.0567,
   "accelerometer_z": 0.9876,
-  "gyroscope_pitch": 0.02,
-  "gyroscope_roll": -0.01,
-  "gyroscope_yaw": 0.15,
+  "gyroscope_x": 0.02,
+  "gyroscope_y": -0.01,
+  "gyroscope_z": 0.15,
   "magnetometer_x": 25.74,
   "magnetometer_y": -8.73,
   "magnetometer_z": 40.51,
   "magnetometer_heading": 148.37,
-  "sensors_barometric_pressure": 1013.25,
-  "device_battery_level": 82.0,
+  "barometric_pressure": 1013.25,
+  "device_battery_level": 82,
   "device_signal_strength": -63,
   "device_orientation": "portrait",
   "device_screen_on": false,
@@ -286,15 +211,64 @@ Flattened structure with contextual field names produced by `imc-telemetry-flatt
 
 **See [FLATTENED_SCHEMA.md](FLATTENED_SCHEMA.md) for complete field mapping documentation.**
 
+## Database Schema
+
+The Greenplum table schema matches the flattened JSON exactly:
+
+```sql
+CREATE TABLE vehicle_events (
+    -- Core vehicle data
+    policy_id INTEGER,
+    vehicle_id INTEGER,
+    vin VARCHAR(255),
+    event_time TIMESTAMP WITH TIME ZONE,
+    speed_mph REAL,
+    speed_limit_mph INTEGER,
+    current_street VARCHAR(255),
+    g_force REAL,
+    driver_id INTEGER,
+    
+    -- GPS data fields (gps_*)
+    gps_latitude DOUBLE PRECISION,
+    gps_longitude DOUBLE PRECISION,
+    gps_altitude REAL,
+    gps_speed REAL,
+    gps_bearing REAL,
+    gps_accuracy REAL,
+    gps_satellite_count INTEGER,
+    gps_fix_time INTEGER,
+    
+    -- Sensor data fields
+    accelerometer_x REAL,
+    accelerometer_y REAL,
+    accelerometer_z REAL,
+    gyroscope_x REAL,
+    gyroscope_y REAL,
+    gyroscope_z REAL,
+    magnetometer_x REAL,
+    magnetometer_y REAL,
+    magnetometer_z REAL,
+    magnetometer_heading REAL,
+    barometric_pressure REAL,
+    
+    -- Device data fields (device_*)
+    device_battery_level INTEGER,
+    device_signal_strength INTEGER,
+    device_orientation VARCHAR(255),
+    device_screen_on BOOLEAN,
+    device_charging BOOLEAN
+)
+DISTRIBUTED BY (vehicle_id)
+PARTITION BY RANGE (event_time) (
+    START (date '2024-01-01') INCLUSIVE
+    END (date '2025-12-31') EXCLUSIVE
+    EVERY (INTERVAL '1 month')
+);
+```
+
 ## Actuator Metrics
 
 All apps expose actuator endpoints (health, info, metrics). Example queries:
-
-### Telemetry Flattener Metrics
-- List metrics: `GET /actuator/metrics`
-- Messages processed: `GET /actuator/metrics/telemetry_messages_total`
-- Successfully flattened: `GET /actuator/metrics/telemetry_flattened_total`
-- Flattening errors: `GET /actuator/metrics/telemetry_flatten_errors_total`
 
 ### Telemetry Processor Metrics
 - List metrics: `GET /actuator/metrics`
@@ -304,7 +278,6 @@ All apps expose actuator endpoints (health, info, metrics). Example queries:
 
 ## Configuration Templates
 
-- Telemetry flattener: `imc-telemetry-flattener/src/main/resources/application.yml`
 - Telemetry processor: `imc-telemetry-processor/src/main/resources/application.yml.template`
 - HDFS sink: `imc-hdfs-sink/src/main/resources/application.yml.template`
 - Stream manager: 
@@ -313,12 +286,13 @@ All apps expose actuator endpoints (health, info, metrics). Example queries:
 
 ## Architecture Benefits
 
-The dedicated flattener service architecture provides:
+The simplified fanout architecture with pre-flattened JSON provides:
 
-- **🚀 Performance**: HDFS writes no longer blocked by accident detection logic
-- **🔧 Maintainability**: Single flattening implementation eliminates code duplication
-- **📝 Clarity**: Contextual field names (e.g., `gps_latitude`, `device_battery_level`) preserve meaning
-- **⚡ Scalability**: Independent scaling of flattener, HDFS sink, and accident processor
-- **🔍 Database Friendly**: Self-documenting column names improve query readability
+- **🚀 Zero Transformation Overhead**: No JSON processing or flattening required
+- **⚡ Maximum Performance**: Direct consumption of optimized flat JSON
+- **🔧 Simplified Maintainability**: Fewer components and processing steps
+- **📊 Database Ready**: Field names match database columns exactly
+- **📈 Better Scalability**: Independent scaling of HDFS sink and accident processor
+- **🔍 Optimized Storage**: HDFS partitioned by date and driver for efficient queries
 
 The stream manager uses a unified configuration approach with global settings in `config.yml` and stream-specific settings in the `stream-configs/` directory.

@@ -32,15 +32,32 @@ class HdfsSinkTest {
     }
 
     @Test
-    void testJsonMessageStructure() {
-        String validJson = "{\"vehicle_id\":123,\"g_force\":2.5,\"timestamp\":\"2024-01-15T10:30:45.123Z\"}";
-        byte[] payload = validJson.getBytes(StandardCharsets.UTF_8);
+    void testFlatJsonMessageStructure() {
+        String validFlatJson = """
+            {
+              "policy_id": 200018,
+              "vehicle_id": 300021,
+              "vin": "1HGBH41JXMN109186",
+              "event_time": "2024-01-15T10:30:45.123Z",
+              "speed_mph": 32.5,
+              "speed_limit_mph": 35,
+              "g_force": 1.18,
+              "driver_id": 400018,
+              "gps_latitude": 33.7701,
+              "gps_longitude": -84.3876,
+              "device_battery_level": 82,
+              "device_charging": true
+            }""";
+        byte[] payload = validFlatJson.getBytes(StandardCharsets.UTF_8);
         
-        // Test that the message structure is preserved
+        // Test that the flat JSON structure is preserved
         String reconstructed = new String(payload, StandardCharsets.UTF_8);
         assertTrue(reconstructed.contains("vehicle_id"));
         assertTrue(reconstructed.contains("g_force"));
-        assertTrue(reconstructed.contains("timestamp"));
+        assertTrue(reconstructed.contains("event_time"));
+        assertTrue(reconstructed.contains("gps_latitude"));
+        assertTrue(reconstructed.contains("driver_id"));
+        assertTrue(reconstructed.contains("device_battery_level"));
     }
 
     @Test
@@ -56,13 +73,13 @@ class HdfsSinkTest {
     @Test
     void testPayloadSizes() {
         String smallMessage = "{\"id\":1}";
-        String largeMessage = "{\"vehicle_id\":123,\"g_force\":2.5,\"sensors\":{\"gps\":{\"latitude\":33.7701,\"longitude\":-84.3876}}}";
+        String flatMessage = "{\"vehicle_id\":123,\"g_force\":2.5,\"gps_latitude\":33.7701,\"gps_longitude\":-84.3876,\"device_battery_level\":82}";
         
         byte[] smallPayload = smallMessage.getBytes(StandardCharsets.UTF_8);
-        byte[] largePayload = largeMessage.getBytes(StandardCharsets.UTF_8);
+        byte[] flatPayload = flatMessage.getBytes(StandardCharsets.UTF_8);
         
-        assertTrue(smallPayload.length < largePayload.length);
+        assertTrue(smallPayload.length < flatPayload.length);
         assertTrue(smallPayload.length > 0);
-        assertTrue(largePayload.length > 50);
+        assertTrue(flatPayload.length > 50);
     }
 }
