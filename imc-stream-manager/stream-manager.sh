@@ -463,22 +463,24 @@ cleanup_hdfs_data() {
       # Use hdfs command to delete the directory and skip trash
       if command -v hdfs >/dev/null 2>&1; then
         echo "Using hdfs command..."
-        echo "Running: HADOOP_USER_NAME=$hdfs_user hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
-        if HADOOP_USER_NAME="$hdfs_user" hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/; then
+        echo "Running: HADOOP_USER_NAME=$hdfs_user hdfs dfs -fs $hdfs_namenode -rm -r -f -skipTrash /insurance-megacorp/"
+        if HADOOP_USER_NAME="$hdfs_user" hdfs dfs -fs "$hdfs_namenode" -rm -r -f -skipTrash /insurance-megacorp/; then
           log_success "HDFS cleanup completed successfully"
         else
           echo -e "${C_YELLOW}HDFS delete command failed or directory was already empty${C_RESET}"
         fi
       else
         echo -e "${C_YELLOW}hdfs command not available. Please run manually:${C_RESET}"
-        echo "  hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
+        echo "  export HADOOP_USER_NAME=$hdfs_user"
+        echo "  hdfs dfs -fs $hdfs_namenode -rm -r -f -skipTrash /insurance-megacorp/"
         echo
         echo "Or via WebHDFS API:"
         echo "  curl -X DELETE \"${hdfs_namenode}/webhdfs/v1/insurance-megacorp?op=DELETE&recursive=true&user.name=${hdfs_user}\""
       fi
     else
       echo -e "${C_YELLOW}Telemetry streams config not found. Please run manually:${C_RESET}"
-      echo "  hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
+      echo "  export HADOOP_USER_NAME=hdfs"
+      echo "  hdfs dfs -fs hdfs://big-data-005.kuhn-labs.com:8020 -rm -r -f -skipTrash /insurance-megacorp/"
     fi
   else
     echo "Cleanup cancelled."
