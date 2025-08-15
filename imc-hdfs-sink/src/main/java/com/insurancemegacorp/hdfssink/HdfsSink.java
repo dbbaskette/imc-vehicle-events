@@ -320,7 +320,7 @@ public class HdfsSink implements Consumer<byte[]> {
             String filePath = dir + "/" + fileName;
             Path file = new Path(filePath);
             
-            String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+            String schemaString = createParquetSchema();
             MessageType schema = MessageTypeParser.parseMessageType(schemaString);
             
             Configuration writerConf = new Configuration(hadoopConf);
@@ -370,10 +370,12 @@ public class HdfsSink implements Consumer<byte[]> {
             throw new IllegalStateException("Writer " + writerId + " not initialized");
         }
         
-        String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+        String schemaString = createParquetSchema();
         MessageType schema = MessageTypeParser.parseMessageType(schemaString);
         Group group = new SimpleGroup(schema);
-        group.add("raw_json", message);
+        
+        // Parse JSON and populate Parquet columns
+        populateParquetGroup(group, message);
         writer.write(group);
         
         // Force flush for immediate visibility in demo mode
@@ -641,6 +643,123 @@ public class HdfsSink implements Consumer<byte[]> {
         } catch (Exception e) {
             log.warn("Could not get file size for: {}", filePath, e);
             return 0;
+        }
+    }
+    
+    private String createParquetSchema() {
+        return """
+            message telemetry {
+              required int64 policy_id;
+              required int64 vehicle_id;
+              required binary vin (UTF8);
+              required binary event_time (UTF8);
+              required double speed_mph;
+              required int32 speed_limit_mph;
+              required binary current_street (UTF8);
+              required double g_force;
+              required int32 driver_id;
+              
+              required double gps_latitude;
+              required double gps_longitude;
+              required double gps_altitude;
+              required double gps_speed;
+              required double gps_bearing;
+              required double gps_accuracy;
+              required int32 gps_satellite_count;
+              required int32 gps_fix_time;
+              
+              required double accelerometer_x;
+              required double accelerometer_y;
+              required double accelerometer_z;
+              
+              required double gyroscope_x;
+              required double gyroscope_y;
+              required double gyroscope_z;
+              
+              required double magnetometer_x;
+              required double magnetometer_y;
+              required double magnetometer_z;
+              required double magnetometer_heading;
+              
+              required double barometric_pressure;
+              
+              required int32 device_battery_level;
+              required int32 device_signal_strength;
+              required binary device_orientation (UTF8);
+              required boolean device_screen_on;
+              required boolean device_charging;
+            }
+            """;
+    }
+    
+    private void populateParquetGroup(Group group, String jsonMessage) throws IOException {
+        try {
+            JsonNode json = objectMapper.readTree(jsonMessage);
+            
+            // Basic telemetry fields
+            group.add("policy_id", json.get("policy_id").asLong());
+            group.add("vehicle_id", json.get("vehicle_id").asLong());
+            group.add("vin", json.get("vin").asText());
+            group.add("event_time", json.get("event_time").asText());
+            group.add("speed_mph", json.get("speed_mph").asDouble());
+            group.add("speed_limit_mph", json.get("speed_limit_mph").asInt());
+            group.add("current_street", json.get("current_street").asText());
+            group.add("g_force", json.get("g_force").asDouble());
+            
+            // Handle driver_id - could be string or int, clean DRIVER- prefix if present
+            JsonNode driverIdNode = json.get("driver_id");
+            int driverId;
+            if (driverIdNode.isTextual()) {
+                String driverIdText = driverIdNode.asText();
+                if (driverIdText.startsWith("DRIVER-")) {
+                    driverId = Integer.parseInt(driverIdText.substring(7));
+                } else {
+                    driverId = Integer.parseInt(driverIdText);
+                }
+            } else {
+                driverId = driverIdNode.asInt();
+            }
+            group.add("driver_id", driverId);
+            
+            // GPS fields
+            group.add("gps_latitude", json.get("gps_latitude").asDouble());
+            group.add("gps_longitude", json.get("gps_longitude").asDouble());
+            group.add("gps_altitude", json.get("gps_altitude").asDouble());
+            group.add("gps_speed", json.get("gps_speed").asDouble());
+            group.add("gps_bearing", json.get("gps_bearing").asDouble());
+            group.add("gps_accuracy", json.get("gps_accuracy").asDouble());
+            group.add("gps_satellite_count", json.get("gps_satellite_count").asInt());
+            group.add("gps_fix_time", json.get("gps_fix_time").asInt());
+            
+            // Accelerometer fields
+            group.add("accelerometer_x", json.get("accelerometer_x").asDouble());
+            group.add("accelerometer_y", json.get("accelerometer_y").asDouble());
+            group.add("accelerometer_z", json.get("accelerometer_z").asDouble());
+            
+            // Gyroscope fields
+            group.add("gyroscope_x", json.get("gyroscope_x").asDouble());
+            group.add("gyroscope_y", json.get("gyroscope_y").asDouble());
+            group.add("gyroscope_z", json.get("gyroscope_z").asDouble());
+            
+            // Magnetometer fields
+            group.add("magnetometer_x", json.get("magnetometer_x").asDouble());
+            group.add("magnetometer_y", json.get("magnetometer_y").asDouble());
+            group.add("magnetometer_z", json.get("magnetometer_z").asDouble());
+            group.add("magnetometer_heading", json.get("magnetometer_heading").asDouble());
+            
+            // Barometric pressure
+            group.add("barometric_pressure", json.get("barometric_pressure").asDouble());
+            
+            // Device fields
+            group.add("device_battery_level", json.get("device_battery_level").asInt());
+            group.add("device_signal_strength", json.get("device_signal_strength").asInt());
+            group.add("device_orientation", json.get("device_orientation").asText());
+            group.add("device_screen_on", json.get("device_screen_on").asBoolean());
+            group.add("device_charging", json.get("device_charging").asBoolean());
+            
+        } catch (Exception e) {
+            log.error("Failed to parse JSON message for Parquet schema: {}", jsonMessage, e);
+            throw new IOException("Failed to populate Parquet group", e);
         }
     }
     
