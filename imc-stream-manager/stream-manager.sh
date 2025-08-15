@@ -452,15 +452,23 @@ cleanup_hdfs_data() {
     local config_file="$STREAM_CONFIGS_DIR/telemetry-streams.yml"
     if [[ -f "$config_file" ]]; then
       local hdfs_namenode
-      hdfs_namenode=$(yq e '.deploy.telemetry-to-hdfs.app.imc-hdfs-sink.hdfs.namenodeUri // "hdfs://big-data-005.kuhn-labs.com:8020"' "$config_file")
+      hdfs_namenode=$(yq e '.deployment_properties."app.imc-hdfs-sink.hdfs.namenodeUri" // "hdfs://big-data-005.kuhn-labs.com:8020"' "$config_file" | sed 's/\${[^:]*:\([^}]*\)}/\1/')
       local hdfs_user
-      hdfs_user=$(yq e '.deploy.telemetry-to-hdfs.app.imc-hdfs-sink.hdfs.user // "hdfs"' "$config_file")
+      hdfs_user=$(yq e '.deployment_properties."app.imc-hdfs-sink.hdfs.user" // "hdfs"' "$config_file" | sed 's/\${[^:]*:\([^}]*\)}/\1/')
+      
+      echo "HDFS Namenode: $hdfs_namenode"
+      echo "HDFS User: $hdfs_user"
+      echo
       
       # Use hdfs command to delete the directory and skip trash
       if command -v hdfs >/dev/null 2>&1; then
         echo "Using hdfs command..."
-        hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/ 2>/dev/null || true
-        log_success "HDFS cleanup completed"
+        echo "Running: hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
+        if hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/; then
+          log_success "HDFS cleanup completed successfully"
+        else
+          echo -e "${C_YELLOW}HDFS delete command failed or directory was already empty${C_RESET}"
+        fi
       else
         echo -e "${C_YELLOW}hdfs command not available. Please run manually:${C_RESET}"
         echo "  hdfs dfs -rm -r -f -skipTrash /insurance-megacorp/"
