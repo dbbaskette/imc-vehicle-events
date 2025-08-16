@@ -1,6 +1,5 @@
--- Drop and recreate vehicle_events table to match new flattened JSON schema
+-- Drop and recreate vehicle_events table (simplified, no partitioning)
 -- Schema matches exact field names from FLATTENED_SCHEMA.md
--- Uses TIMESTAMP WITH TIME ZONE for automatic ISO string conversion
 
 -- Drop the existing table if it exists
 DROP TABLE IF EXISTS vehicle_events CASCADE;
@@ -60,13 +59,9 @@ WITH (
 )
 DISTRIBUTED BY (vehicle_id);
 
-
 -- Add indexes for performance
 CREATE INDEX idx_vehicle_events_event_time ON vehicle_events (event_time);
 CREATE INDEX idx_vehicle_events_policy_id ON vehicle_events (policy_id);
 CREATE INDEX idx_vehicle_events_vehicle_id ON vehicle_events (vehicle_id);
 CREATE INDEX idx_vehicle_events_driver_id ON vehicle_events (driver_id);
 CREATE INDEX idx_vehicle_events_g_force ON vehicle_events (g_force);
-
--- Grant permissions (adjust as needed for your environment)
--- GRANT SELECT, INSERT, UPDATE, DELETE ON vehicle_events TO your_user;

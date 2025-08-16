@@ -169,11 +169,17 @@ External Telemetry Generator
 ### File Format and Structure
 The `imc-hdfs-sink` writes all flat telemetry data to HDFS for long-term storage and analytics:
 
-- **Format**: Apache Parquet with SNAPPY compression
-- **Partitioning**: Date and driver-based partitioning using Hive-style partitioning
-  - Path structure: `/insurance-megacorp/telemetry-data-v2/date=YYYY-MM-DD/driver_id=NNNNNN/`
-  - Example: `/insurance-megacorp/telemetry-data-v2/date=2025-08-15/driver_id=400018/telemetry-20250815_154231-1755272551646.parquet`
-  - Configuration: `hdfs.partitionPath: "'date=' + T(java.time.LocalDate).now().toString() + '/driver_id=' + payload.driver_id"`
+- **Format**: Apache Parquet with SNAPPY compression and **columnar schema** (35 structured fields)
+- **Schema**: Structured Parquet columns instead of raw JSON for optimal analytics performance
+  - Direct column access (no JSON parsing required)
+  - Proper data types: `int64`, `double`, `boolean`, `UTF8`
+  - Example columns: `policy_id`, `vehicle_id`, `g_force`, `gps_latitude`, `device_battery_level`
+- **Parallel Writers**: 3 concurrent writers per instance for 3x file creation activity
+  - Writer naming: `telemetry-timestamp-instanceId-writerId-millis.parquet`
+  - Example: `telemetry-20250815_154231-cf-0-writer-A-1755272551646.parquet`
+- **Partitioning**: Date-only partitioning for demo (simplified from date+driver)
+  - Path structure: `/insurance-megacorp/telemetry-data-v2/date=YYYY-MM-DD/`
+  - Configuration: `hdfs.partitionPath: "'date=' + T(java.time.LocalDate).now().toString()"`
 - **File Rolling**: 
   - Size-based: 128MB file size limit
   - Time-based: 5-minute intervals (300 seconds)
@@ -243,7 +249,7 @@ CREATE TABLE vehicle_events (
     policy_id INTEGER,
     vehicle_id INTEGER,
     vin VARCHAR(255),
-    event_time TIMESTAMP WITH TIME ZONE,
+    event_time BIGINT,                    -- Unix epoch timestamp
     speed_mph REAL,
     speed_limit_mph INTEGER,
     current_street VARCHAR(255),
@@ -296,10 +302,11 @@ CREATE INDEX idx_vehicle_events_g_force ON vehicle_events (g_force);
 
 ### Schema Features
 - **Direct Field Mapping**: Column names match JSON field names exactly
-- **Automatic Type Conversion**: `event_time` ISO strings convert to `TIMESTAMP WITH TIME ZONE`
+- **Unix Timestamps**: `event_time` stored as `BIGINT` (Unix epoch) to match JSON format
 - **Simplified Design**: No partitioning for demo environment (keeps it simple)
 - **Performance Indexes**: Key fields indexed for efficient queries
 - **Accident Focus**: Only stores high g-force events (accidents) from telemetry processor
+- **Data Type Compatibility**: All types match the incoming JSON data format exactly
 
 ## Actuator Metrics
 
@@ -328,7 +335,8 @@ The simplified fanout architecture with pre-flattened JSON provides:
 - **🔧 Simplified Maintainability**: Fewer components and processing steps
 - **📊 Database Ready**: Field names match database columns exactly
 - **📈 Better Scalability**: Independent scaling of HDFS sink and accident processor
-- **🔍 Optimized HDFS Storage**: Parquet format with date/driver partitioning for efficient analytics
-- **🗃️ Simplified Database**: No partitioning in Greenplum for demo simplicity
+- **🔍 Columnar HDFS Storage**: Structured Parquet with 35 typed columns for 10-100x faster analytics
+- **⚡ Parallel Writers**: 3 concurrent writers per instance for maximum demo file creation activity  
+- **🗃️ Simplified Database**: No partitioning, Unix timestamps for direct JSON compatibility
 
 The stream manager uses a unified configuration approach with global settings in `config.yml` and stream-specific settings in the `stream-configs/` directory.
