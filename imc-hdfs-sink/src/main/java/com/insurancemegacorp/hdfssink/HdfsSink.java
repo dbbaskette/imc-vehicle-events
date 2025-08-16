@@ -13,7 +13,7 @@ import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
+
 import org.springframework.stereotype.Component;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -37,6 +37,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -53,6 +56,13 @@ public class HdfsSink implements Consumer<byte[]> {
     private final AtomicBoolean shutdownRequested = new AtomicBoolean(false);
     private final AtomicLong messagesReceived = new AtomicLong(0);
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    // Parallel writers: Map of writerId -> writer
+    private final Map<String, ParquetWriter<Group>> writers = new ConcurrentHashMap<>();
+    private final Map<String, String> writerFilePaths = new ConcurrentHashMap<>(); 
+    private final Map<String, Long> writerStartTimes = new ConcurrentHashMap<>();
+    private final Map<String, Integer> writerMessageCounts = new ConcurrentHashMap<>();
+    
+    // Legacy single writer fields (for backward compatibility during migration)
     private ParquetWriter<Group> currentWriter;
     private String currentFilePath;
     private long currentFileStartTime;
@@ -109,6 +119,9 @@ public class HdfsSink implements Consumer<byte[]> {
     
     @Value("${hdfs.forceFlush:false}")
     private boolean forceFlush;
+    
+    @Value("${hdfs.writers.count:3}")
+    private int writersCount;
     
     public HdfsSink(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -212,47 +225,212 @@ public class HdfsSink implements Consumer<byte[]> {
         }
         
         Timer.Sample sample = Timer.start(meterRegistry);
-        int retryCount = 0;
         
-        while (retryCount <= maxRetries) {
+        try {
+            // Distribute messages to writers using round-robin
+            Map<String, List<String>> writerBatches = distributeMessagesRoundRobin(batch);
+            
+            // Process all writers in parallel
+            writerBatches.entrySet().parallelStream().forEach(entry -> {
+                String writerId = entry.getKey();
+                List<String> messages = entry.getValue();
+                
+                try {
+                    processWriterBatch(writerId, messages);
+                } catch (Exception e) {
+                    log.error("Failed to process batch for writer {}", writerId, e);
+                    meterRegistry.counter("hdfs_writer_failures_total").increment();
+                }
+            });
+            
+            log.debug("Processed batch of {} messages across {} writers", batch.size(), writerBatches.size());
+            meterRegistry.counter("hdfs_messages_written_total").increment(batch.size());
+            sample.stop(Timer.builder("hdfs_batch_processing_duration")
+                .description("Time taken to write batch to HDFS")
+                .register(meterRegistry));
+                
+        } catch (Exception e) {
+            log.error("Failed to process batch to HDFS", e);
+            messageQueue.addAll(batch);
+            meterRegistry.counter("hdfs_batch_failures_total").increment();
+            sample.stop(Timer.builder("hdfs_batch_processing_duration")
+                .tag("status", "error")
+                .register(meterRegistry));
+        }
+    }
+    
+    private Map<String, List<String>> distributeMessagesRoundRobin(List<String> batch) {
+        Map<String, List<String>> writerBatches = new HashMap<>();
+        
+        // Initialize writer batches
+        for (int i = 0; i < writersCount; i++) {
+            String writerId = "writer-" + (char)('A' + i); // A, B, C
+            writerBatches.put(writerId, new ArrayList<>());
+        }
+        
+        // Distribute messages round-robin
+        for (int i = 0; i < batch.size(); i++) {
+            String writerId = "writer-" + (char)('A' + (i % writersCount));
+            writerBatches.get(writerId).add(batch.get(i));
+        }
+        
+        // Remove empty batches
+        writerBatches.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+        
+        log.debug("Distributed {} messages across {} writers: {}", 
+                batch.size(), writerBatches.size(), 
+                writerBatches.entrySet().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey, 
+                        e -> e.getValue().size())));
+        
+        return writerBatches;
+    }
+    
+    private void processWriterBatch(String writerId, List<String> messages) throws IOException {
+        if (messages.isEmpty()) {
+            return;
+        }
+        
+        ParquetWriter<Group> writer = getOrCreateWriter(writerId);
+        
+        for (String message : messages) {
+            writeMessageToWriter(writer, message, writerId);
+        }
+        
+        // Update message count for this writer
+        writerMessageCounts.merge(writerId, messages.size(), Integer::sum);
+        
+        // Check if this writer needs file rolling
+        checkWriterFileRolling(writerId);
+    }
+    
+    private ParquetWriter<Group> getOrCreateWriter(String writerId) throws IOException {
+        return writers.computeIfAbsent(writerId, this::createWriterForId);
+    }
+    
+    private ParquetWriter<Group> createWriterForId(String writerId) {
+        try {
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            String partitionDir = evaluatePartitionPath(null); // Use current date
+            String instanceId = getInstanceId();
+            
+            Path dir = new Path(outputPath + "/" + partitionDir);
+            String fileName = "telemetry-" + timestamp + "-" + instanceId + "-" + writerId + "-" + System.currentTimeMillis() + ".parquet";
+            String filePath = dir + "/" + fileName;
+            Path file = new Path(filePath);
+            
+            String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+            MessageType schema = MessageTypeParser.parseMessageType(schemaString);
+            
+            Configuration writerConf = new Configuration(hadoopConf);
+            GroupWriteSupport.setSchema(schema, writerConf);
+            writerConf.setInt("dfs.replication", replicationFactor);
+            
+            ParquetWriter<Group> writer = org.apache.parquet.hadoop.example.ExampleParquetWriter.builder(file)
+                    .withConf(writerConf)
+                    .withCompressionCodec(CompressionCodecName.SNAPPY)
+                    .withWriteMode(org.apache.parquet.hadoop.ParquetFileWriter.Mode.CREATE)
+                    .withType(schema)
+                    .build();
+            
+            // Track file metadata
+            writerFilePaths.put(writerId, filePath);
+            writerStartTimes.put(writerId, System.currentTimeMillis());
+            writerMessageCounts.put(writerId, 0);
+            
+            log.info("Created new HDFS Parquet writer {}: {}", writerId, filePath);
+            meterRegistry.counter("hdfs_files_created_total").increment();
+            
+            return writer;
+            
+        } catch (IOException e) {
+            log.error("Failed to create writer for {}", writerId, e);
+            throw new RuntimeException("Failed to create writer", e);
+        }
+    }
+    
+    private String getInstanceId() {
+        // Try CloudFoundry instance index first
+        String cfIndex = System.getenv("CF_INSTANCE_INDEX");
+        if (cfIndex != null && !cfIndex.isEmpty()) {
+            return "cf-" + cfIndex;
+        }
+        
+        // Fallback to hostname
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return "instance-" + Thread.currentThread().threadId();
+        }
+    }
+    
+    private void writeMessageToWriter(ParquetWriter<Group> writer, String message, String writerId) throws IOException {
+        if (writer == null) {
+            throw new IllegalStateException("Writer " + writerId + " not initialized");
+        }
+        
+        String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+        MessageType schema = MessageTypeParser.parseMessageType(schemaString);
+        Group group = new SimpleGroup(schema);
+        group.add("raw_json", message);
+        writer.write(group);
+        
+        // Force flush for immediate visibility in demo mode
+        if (forceFlush) {
+            writer.close();
+            writers.remove(writerId); // Will be recreated on next write
+            writerFilePaths.remove(writerId);
+            writerStartTimes.remove(writerId);
+            writerMessageCounts.remove(writerId);
+        }
+    }
+    
+    private void checkWriterFileRolling(String writerId) {
+        ParquetWriter<Group> writer = writers.get(writerId);
+        if (writer == null) {
+            return;
+        }
+        
+        boolean shouldRoll = false;
+        String reason = "";
+        
+        // Check file age
+        Long startTime = writerStartTimes.get(writerId);
+        if (startTime != null) {
+            long fileAgeMillis = System.currentTimeMillis() - startTime;
+            if (fileAgeMillis > maxFileAgeMinutes * 60 * 1000) {
+                shouldRoll = true;
+                reason = "age";
+            }
+        }
+        
+        // Check message count
+        Integer messageCount = writerMessageCounts.get(writerId);
+        if (messageCount != null && messageCount >= maxMessagesPerFile) {
+            shouldRoll = true;
+            reason = "message count";
+        }
+        
+        if (shouldRoll) {
+            closeWriter(writerId, reason);
+        }
+    }
+    
+    private void closeWriter(String writerId, String reason) {
+        ParquetWriter<Group> writer = writers.remove(writerId);
+        if (writer != null) {
             try {
-                // Use first message for partition evaluation before creating writer
-                String firstMessage = batch.isEmpty() ? null : batch.get(0);
-                ensureWriterExists(firstMessage);
+                writer.close();
+                String filePath = writerFilePaths.remove(writerId);
+                Integer messageCount = writerMessageCounts.remove(writerId);
+                writerStartTimes.remove(writerId);
                 
-                for (String message : batch) {
-                    writeMessage(message);
-                    currentFileMessageCount++;
-                }
-                
-                log.debug("Processed batch of {} messages to HDFS", batch.size());
-                meterRegistry.counter("hdfs_messages_written_total").increment(batch.size());
-                sample.stop(Timer.builder("hdfs_batch_processing_duration")
-                    .description("Time taken to write batch to HDFS")
-                    .register(meterRegistry));
-                return;
-                
+                log.info("Closed writer {} due to {} with {} messages: {}", 
+                        writerId, reason, messageCount, filePath);
+                meterRegistry.counter("hdfs_files_closed_total").increment();
             } catch (Exception e) {
-                retryCount++;
-                log.warn("Failed to process batch to HDFS (attempt {}/{})", retryCount, maxRetries + 1, e);
-                
-                if (retryCount <= maxRetries) {
-                    closeCurrentWriter();
-                    try {
-                        Thread.sleep(retryInterval);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                } else {
-                    log.error("Failed to process batch after {} retries, requeueing messages", maxRetries, e);
-                    messageQueue.addAll(batch);
-                    meterRegistry.counter("hdfs_batch_failures_total").increment();
-                    sample.stop(Timer.builder("hdfs_batch_processing_duration")
-                        .tag("status", "error")
-                        .register(meterRegistry));
-                    closeCurrentWriter();
-                }
+                log.error("Error closing writer {}", writerId, e);
             }
         }
     }
@@ -307,6 +485,10 @@ public class HdfsSink implements Consumer<byte[]> {
     }
     
     private String evaluatePartitionPath() {
+        return evaluatePartitionPath(lastMessageForPartitioning);
+    }
+    
+    private String evaluatePartitionPath(String messageForPartitioning) {
         // If no custom partition path is configured, use default date partitioning
         if (partitionPathTemplate == null || partitionPathTemplate.trim().isEmpty()) {
             String date = LocalDate.now().toString();
@@ -322,10 +504,10 @@ public class HdfsSink implements Consumer<byte[]> {
         }
         
         // Parse JSON to extract payload values BEFORE string concatenation cleanup
-        if (result.contains("payload.") && lastMessageForPartitioning != null) {
+        if (result.contains("payload.") && messageForPartitioning != null) {
             try {
-                JsonNode jsonNode = objectMapper.readTree(lastMessageForPartitioning);
-                log.info("DEBUG: Full JSON message for partition evaluation: {}", lastMessageForPartitioning);
+                JsonNode jsonNode = objectMapper.readTree(messageForPartitioning);
+                log.info("DEBUG: Full JSON message for partition evaluation: {}", messageForPartitioning);
                 log.info("DEBUG: JSON keys available: {}", jsonNode.fieldNames());
                 
                 // Replace payload.driver_id with actual value from JSON
@@ -462,6 +644,13 @@ public class HdfsSink implements Consumer<byte[]> {
         }
     }
     
+    private void closeAllWriters() {
+        log.info("Closing all parallel writers...");
+        for (String writerId : new ArrayList<>(writers.keySet())) {
+            closeWriter(writerId, "shutdown");
+        }
+    }
+    
     @PreDestroy
     public void shutdown() {
         log.info("Shutting down HDFS Sink...");
@@ -470,6 +659,10 @@ public class HdfsSink implements Consumer<byte[]> {
         // Process remaining messages
         processBatch();
         
+        // Close all parallel writers
+        closeAllWriters();
+        
+        // Close legacy writer if it exists
         closeCurrentWriter();
         
         scheduler.shutdown();
