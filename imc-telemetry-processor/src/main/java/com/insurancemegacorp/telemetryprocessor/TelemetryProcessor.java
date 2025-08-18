@@ -7,8 +7,6 @@ import org.slf4j.LoggerFactory;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
 import java.util.function.Function;
@@ -27,22 +25,19 @@ public class TelemetryProcessor {
     }
 
     @Bean
-    public Function<Message<byte[]>, Message<byte[]>> vehicleEventsOut() {
+    public Function<String, String> vehicleEventsOut() {
         // Emit ONLY vehicle events (rule: g_force > threshold) from already-flattened JSON
-        return in -> {
+        return jsonMessage -> {
             // Count every processed message
             meterRegistry.counter("telemetry_messages_total", "binding", "vehicleEventsOut-in-0").increment();
             try {
-                JsonNode root = mapper.readTree(in.getPayload());
+                JsonNode root = mapper.readTree(jsonMessage);
                 double g = root.path("g_force").asDouble(0.0);
                 if (g > accidentGforceThreshold) {
                     log.info("Vehicle event detected g_force={} (threshold={})", g, accidentGforceThreshold);
                     meterRegistry.counter("telemetry_vehicle_events_total").increment();
                     // Message is already flattened, just pass it through
-                    return MessageBuilder.withPayload(in.getPayload())
-                            .copyHeaders(in.getHeaders())
-                            .setHeaderIfAbsent("contentType", "application/json")
-                            .build();
+                    return jsonMessage;
                 }
                 return null;
             } catch (Exception e) {

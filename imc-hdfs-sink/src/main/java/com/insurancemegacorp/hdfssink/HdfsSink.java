@@ -26,7 +26,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -46,7 +45,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.security.UserGroupInformation;
 
 @Component
-public class HdfsSink implements Consumer<byte[]> {
+public class HdfsSink implements Consumer<String> {
     private static final Logger log = LoggerFactory.getLogger(HdfsSink.class);
     
     private final MeterRegistry meterRegistry;
@@ -191,12 +190,11 @@ public class HdfsSink implements Consumer<byte[]> {
         scheduler.scheduleAtFixedRate(this::checkFileRolling, 0, 1, TimeUnit.MINUTES);
     }
     
-    // Implement Consumer<byte[]> interface: accept inbound messages
+    // Implement Consumer<String> interface: accept inbound messages
     @Override
-    public void accept(byte[] payload) {
+    public void accept(String jsonMessage) {
         Timer.Sample sample = Timer.start(meterRegistry);
         try {
-            String jsonMessage = new String(payload, StandardCharsets.UTF_8);
             messageQueue.offer(jsonMessage);
             messagesReceived.incrementAndGet();
             meterRegistry.counter("hdfs_messages_received_total").increment();
