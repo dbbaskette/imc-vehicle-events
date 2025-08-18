@@ -7,19 +7,19 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.3</version>
+        <version>3.5.4</version>
         <relativePath/>
     </parent>
 
     <groupId>com.insurancemegacorp</groupId>
     <artifactId>imc-hdfs-sink</artifactId>
-    <version>4.3.1</version>
+    <version>4.3.2</version>
     <name>imc-hdfs-sink</name>
     <description>Spring Cloud Stream sink that writes telemetry JSON to HDFS as Parquet</description>
 
     <properties>
         <java.version>21</java.version>
-        <spring-cloud.version>2024.0.0</spring-cloud.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
         <hadoop.version>3.3.6</hadoop.version>
         <parquet.version>1.14.4</parquet.version>
     </properties>
