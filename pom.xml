@@ -5,11 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.insurancemegacorp</groupId>
-    <artifactId>imc-rabbit-spark-suite</artifactId>
+    <artifactId>imc-vehicle-events</artifactId>
     <version>4.1.0</version>
     <packaging>pom</packaging>
-    <name>imc-rabbit-spark-suite</name>
-    <description>Parent project aggregating Rabbit connector and Spark processor</description>
+    <name>imc-vehicle-events</name>
+    <description>Parent project aggregating Rabbit connectors</description>
 
     <modules>
         <module>imc-hdfs-sink</module>
