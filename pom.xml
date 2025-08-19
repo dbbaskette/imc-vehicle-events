@@ -6,7 +6,7 @@
 
     <groupId>com.insurancemegacorp</groupId>
     <artifactId>imc-vehicle-events</artifactId>
-    <version>5.2.2</version>
+    <version>5.3.0</version>
     <packaging>pom</packaging>
     <name>imc-vehicle-events</name>
     <description>Parent project aggregating Rabbit connectors</description>
