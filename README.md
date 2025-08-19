@@ -7,6 +7,7 @@
 Multi-module project containing:
 - `imc-telemetry-processor`: Spring Cloud Stream processor that filters flattened telemetry for accidents (g_force > threshold).
 - `imc-hdfs-sink`: Spring Cloud Stream sink that writes flattened telemetry JSON to HDFS as Parquet (partitioned by date and driver).
+- `imc-jdbc-consumer`: Custom JDBC consumer with Prometheus metrics and service registry integration for enhanced monitoring.
 - `imc-stream-manager`: SCDF stream manager scripts and configs.
 
 ## Prerequisites
@@ -29,6 +30,13 @@ HDFS Sink:
 cd imc-hdfs-sink/src/main/resources
 cp application.yml.template application.yml
 # Configure HDFS_NAMENODE_URI and HDFS_OUTPUT_PATH
+```
+
+JDBC Consumer:
+```bash
+cd imc-jdbc-consumer/src/main/resources
+cp application.yml.template application.yml
+# Configure DATABASE_URL, DATABASE_USERNAME, DATABASE_PASSWORD, TABLE_NAME
 ```
 
 ### Local RabbitMQ (docker-compose)
@@ -108,8 +116,8 @@ The system implements a **simplified fanout architecture** with pre-flattened JS
 
 #### Database Storage Stream: `vehicle-events-to-jdbc`
 ```bash
-# Vehicle events (accidents) are stored in the database
-:vehicle_events > vehicle-events-sink: jdbc
+# Vehicle events (accidents) are stored in the database with enhanced monitoring
+:vehicle_events > imc-jdbc-consumer
 ```
 
 #### Debug Stream: `vehicle-events-to-log`
@@ -159,8 +167,10 @@ External Telemetry Generator
     │ → HDFS Parquet  │   │ (accidents only)│     ├─────────────────┐
     └─────────────────┘   └─────────────────┘     ↓                 ↓ (tap)
                                            ┌─────────────────┐ ┌─────────────────┐
-                                           │ JDBC Sink       │ │ Log Sink        │
-                                           │ (database)      │ │ (debugging)     │
+                                           │ imc-jdbc-       │ │ Log Sink        │
+                                           │ consumer        │ │ (debugging)     │
+                                           │ (database +     │ │                 │
+                                           │  metrics)       │ │                 │
                                            └─────────────────┘ └─────────────────┘
 ```
 
@@ -238,6 +248,55 @@ The telemetry generator now sends optimized flat JSON directly, eliminating tran
 ```
 
 **See [FLATTENED_SCHEMA.md](FLATTENED_SCHEMA.md) for complete field mapping documentation.**
+
+## Custom JDBC Consumer
+
+### Enhanced Database Integration
+The `imc-jdbc-consumer` provides production-grade database integration with comprehensive monitoring and service discovery:
+
+#### Key Features
+- **Prometheus Metrics**: 5 comprehensive metrics for production monitoring
+  - `jdbc_consumer_messages_total` - Total messages processed by table
+  - `jdbc_consumer_messages_success` - Successfully processed messages  
+  - `jdbc_consumer_messages_error` - Failed messages with error classification
+  - `jdbc_consumer_message_duration` - Processing time per message (histogram)
+  - `jdbc_consumer_null_parameters_total` - Data quality metrics
+- **Service Registry**: Eureka client integration for Cloud Foundry service discovery
+- **Enhanced Error Handling**: Configurable retry logic with exponential backoff
+- **Batch Processing**: Optimized throughput with configurable batch sizes (1-1000)
+- **Rich Monitoring**: Comprehensive actuator endpoints including database health
+
+#### Configuration Highlights
+```yaml
+# Enhanced Features
+jdbc.consumer.enable-metrics: true
+jdbc.consumer.metrics-prefix: "jdbc_consumer"  
+jdbc.consumer.enable-retry: true
+jdbc.consumer.max-retry-attempts: 3
+jdbc.consumer.batch-size: 10
+jdbc.consumer.idle-timeout: 5000
+
+# Monitoring Endpoints
+management.endpoints.web.exposure.include: "health,metrics,prometheus,datasource"
+management.metrics.export.prometheus.enabled: true
+```
+
+#### Advantages Over Standard JDBC Sink
+| Feature | Standard JDBC Sink | Custom JDBC Consumer |
+|---------|-------------------|---------------------|
+| **Metrics** | Basic health only | 5 comprehensive Prometheus metrics |
+| **Service Discovery** | None | Eureka integration for CF |
+| **Error Handling** | Basic retry | Advanced retry with classification |
+| **Monitoring** | Limited endpoints | Rich actuator endpoints |
+| **Batch Processing** | Fixed batching | Configurable batch size & timeout |
+| **Data Quality** | No tracking | Null parameter tracking |
+| **Performance Insights** | None | Duration histograms & throughput |
+
+#### Monitoring Endpoints
+- **Health Check**: `/actuator/health` (includes database connection status)
+- **Prometheus Metrics**: `/actuator/prometheus` (all custom metrics)
+- **Application Info**: `/actuator/info` (build info, Git commit)
+- **Database Health**: `/actuator/health/db` (connection pool status)
 
 ## Database Schema
 
@@ -318,10 +377,32 @@ All apps expose actuator endpoints (health, info, metrics). Example queries:
 - Vehicle events (accidents): `GET /actuator/metrics/telemetry_vehicle_events_total`
 - Invalid messages: `GET /actuator/metrics/telemetry_invalid_messages_total`
 
+### Custom JDBC Consumer Metrics
+- **Throughput**: `GET /actuator/metrics/jdbc_consumer_messages_total`
+- **Success Rate**: `GET /actuator/metrics/jdbc_consumer_messages_success`
+- **Error Classification**: `GET /actuator/metrics/jdbc_consumer_messages_error`
+- **Processing Duration**: `GET /actuator/metrics/jdbc_consumer_message_duration`
+- **Data Quality**: `GET /actuator/metrics/jdbc_consumer_null_parameters_total`
+- **Database Health**: `GET /actuator/health/db`
+- **Prometheus Export**: `GET /actuator/prometheus`
+
+### Prometheus Query Examples
+```promql
+# Messages per second by table
+rate(jdbc_consumer_messages_total[5m])
+
+# Error rate percentage  
+rate(jdbc_consumer_messages_error[5m]) / rate(jdbc_consumer_messages_total[5m]) * 100
+
+# Processing duration 95th percentile
+histogram_quantile(0.95, rate(jdbc_consumer_message_duration_bucket[5m]))
+```
+
 ## Configuration Templates
 
 - Telemetry processor: `imc-telemetry-processor/src/main/resources/application.yml.template`
 - HDFS sink: `imc-hdfs-sink/src/main/resources/application.yml.template`
+- JDBC consumer: `imc-jdbc-consumer/src/main/resources/application.yml.template`
 - Stream manager: 
   - `imc-stream-manager/config.yml` - Global SCDF and environment settings
   - `imc-stream-manager/stream-configs/telemetry-streams.yml` - Complete telemetry processing streams configuration
@@ -338,5 +419,8 @@ The simplified fanout architecture with pre-flattened JSON provides:
 - **🔍 Columnar HDFS Storage**: Structured Parquet with 35 typed columns for 10-100x faster analytics
 - **⚡ Parallel Writers**: 3 concurrent writers per instance for maximum demo file creation activity  
 - **🗃️ Simplified Database**: No partitioning, Unix timestamps for direct JSON compatibility
+- **📊 Production Monitoring**: Custom JDBC consumer with 5 Prometheus metrics for comprehensive observability
+- **☁️ Cloud Native**: Service registry integration for Cloud Foundry deployments
+- **🛡️ Enhanced Reliability**: Advanced error handling, retry logic, and data quality tracking
 
 The stream manager uses a unified configuration approach with global settings in `config.yml` and stream-specific settings in the `stream-configs/` directory.
