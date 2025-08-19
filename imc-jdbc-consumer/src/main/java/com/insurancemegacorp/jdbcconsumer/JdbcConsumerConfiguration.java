@@ -66,7 +66,6 @@ import io.micrometer.core.instrument.Timer;
  * - Custom business logic hooks
  */
 @Component
-@AutoConfiguration(after = DataSourceAutoConfiguration.class)
 @EnableConfigurationProperties(JdbcConsumerProperties.class)
 public class JdbcConsumerConfiguration implements Consumer<String> {
 
