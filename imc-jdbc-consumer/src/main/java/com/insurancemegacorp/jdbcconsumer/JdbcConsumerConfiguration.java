@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -19,6 +20,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.expression.EvaluationContext;
@@ -41,7 +43,9 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.datasource.init.DataSourceInitializer;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.util.LinkedMultiValueMap;
@@ -70,10 +74,14 @@ public class JdbcConsumerConfiguration {
 
     private final JdbcConsumerProperties properties;
     private final MeterRegistry meterRegistry;
+    private final ApplicationContext applicationContext;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private NamedParameterJdbcTemplate jdbcTemplate;
 
-    public JdbcConsumerConfiguration(JdbcConsumerProperties properties, MeterRegistry meterRegistry) {
+    public JdbcConsumerConfiguration(JdbcConsumerProperties properties, MeterRegistry meterRegistry, ApplicationContext applicationContext) {
         this.properties = properties;
         this.meterRegistry = meterRegistry;
+        this.applicationContext = applicationContext;
     }
 
     @Bean
@@ -116,11 +124,38 @@ public class JdbcConsumerConfiguration {
     }
 
     @Bean
-    @SuppressWarnings({ "unchecked", "rawtypes" })
-    AnnotationGatewayProxyFactoryBean<Consumer<Message<?>>> jdbcConsumer() {
-        var gatewayProxyFactoryBean = new AnnotationGatewayProxyFactoryBean<>(Consumer.class);
-        gatewayProxyFactoryBean.setDefaultRequestChannelName("jdbcConsumerFlow.input");
-        return (AnnotationGatewayProxyFactoryBean) gatewayProxyFactoryBean;
+    public Consumer<String> jdbcConsumer() {
+        return jsonMessage -> {
+            try {
+                LOGGER.info("JDBC Consumer received message: " + jsonMessage.substring(0, Math.min(100, jsonMessage.length())) + "...");
+                
+                // Parse JSON and extract values for database insertion
+                Map<String, Object> data = parseJsonToMap(jsonMessage);
+                
+                // Insert into database
+                insertIntoDatabase(data);
+                
+                // Record metrics
+                if (properties.isEnableMetrics()) {
+                    meterRegistry.counter(properties.getMetricsPrefix() + "_messages_processed_total",
+                                        "table", properties.getTableName()).increment();
+                }
+                
+                LOGGER.debug("Successfully processed message for table: " + properties.getTableName());
+                
+            } catch (Exception e) {
+                LOGGER.error("Error processing message in JDBC consumer: " + e.getMessage(), e);
+                
+                // Record error metrics
+                if (properties.isEnableMetrics()) {
+                    meterRegistry.counter(properties.getMetricsPrefix() + "_messages_failed_total",
+                                        "table", properties.getTableName(),
+                                        "error", e.getClass().getSimpleName()).increment();
+                }
+                
+                throw new RuntimeException("Failed to process message", e);
+            }
+        };
     }
 
     @Bean
@@ -298,5 +333,58 @@ public class JdbcConsumerConfiguration {
             
             return parameterSource;
         }
+    }
+
+    // Helper methods for simplified JDBC consumer
+    private Map<String, Object> parseJsonToMap(String jsonMessage) throws Exception {
+        return objectMapper.readValue(jsonMessage, Map.class);
+    }
+
+    private void insertIntoDatabase(Map<String, Object> data) {
+        if (jdbcTemplate == null) {
+            DataSource dataSource = applicationContext.getBean(DataSource.class);
+            jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
+        }
+
+        // Generate SQL if not cached
+        String sql = generateInsertSql();
+        
+        // Map data to column parameters
+        MapSqlParameterSource parameterSource = new MapSqlParameterSource();
+        Map<String, String> columnMappings = properties.getColumnsMap();
+        
+        for (Map.Entry<String, String> entry : columnMappings.entrySet()) {
+            String columnName = entry.getKey();
+            String jsonKey = entry.getValue();
+            Object value = data.get(jsonKey);
+            parameterSource.addValue(columnName, value);
+        }
+
+        // Execute insert
+        jdbcTemplate.update(sql, parameterSource);
+    }
+
+    private String generateInsertSql() {
+        Set<String> columns = properties.getColumnsMap().keySet();
+        StringBuilder sql = new StringBuilder("INSERT INTO ");
+        sql.append(properties.getTableName()).append(" (");
+        
+        StringBuilder values = new StringBuilder(" VALUES (");
+        boolean first = true;
+        
+        for (String column : columns) {
+            if (!first) {
+                sql.append(", ");
+                values.append(", ");
+            }
+            sql.append(column);
+            values.append(":").append(column);
+            first = false;
+        }
+        
+        sql.append(")").append(values).append(")");
+        
+        LOGGER.info("Generated SQL for table '" + properties.getTableName() + "': " + sql.toString());
+        return sql.toString();
     }
 }
