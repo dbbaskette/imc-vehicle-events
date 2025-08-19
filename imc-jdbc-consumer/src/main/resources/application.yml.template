@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: imc-jdbc-consumer
+  cloud:
+    function:
+      definition: ${FUNCTION_DEFINITION:jdbcConsumer}
+    stream:
+      bindings:
+        jdbcConsumer-in-0:
+          destination: ${INPUT_DESTINATION:vehicle_events}
+          group: ${INPUT_GROUP:jdbc-consumer-group}
+          content-type: application/json
+      rabbit:
+        bindings:
+          jdbcConsumer-in-0:
+            consumer:
+              exchangeType: ${INPUT_EXCHANGE_TYPE:direct}
+              auto-bind-dlq: true
+              durable-subscription: true
+              max-attempts: 3
+  datasource:
+    url: ${DATASOURCE_URL:jdbc:postgresql://localhost:5432/vehicle_events}
+    username: ${DATASOURCE_USERNAME:postgres}
+    password: ${DATASOURCE_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+
+# JDBC Consumer Configuration
+jdbc:
+  consumer:
+    table-name: ${TABLE_NAME:vehicle_events}
+    columns: ${COLUMNS:policy_id:policy_id,vehicle_id:vehicle_id,driver_id:driver_id,vin:vin,event_time:event_time,gps_latitude:gps_latitude,gps_longitude:gps_longitude,speed_mph:speed_mph,g_force:g_force,current_street:current_street,gps_altitude:gps_altitude,speed_ms:speed_ms,gps_bearing:gps_bearing,gps_accuracy:gps_accuracy,satellite_count:satellite_count,gps_fix_time:gps_fix_time,accel_x:accel_x,accel_y:accel_y,accel_z:accel_z,gyro_pitch:gyro_pitch,gyro_roll:gyro_roll,gyro_yaw:gyro_yaw,mag_x:mag_x,mag_y:mag_y,mag_z:mag_z,heading:heading,battery_level:battery_level,signal_strength:signal_strength,orientation:orientation,screen_on:screen_on,device_charging:device_charging}
+    initialize: ${INITIALIZE_TABLE:false}
+    batch-size: ${BATCH_SIZE:10}
+    idle-timeout: ${IDLE_TIMEOUT:5000}
+    enable-metrics: ${ENABLE_METRICS:true}
+    metrics-prefix: ${METRICS_PREFIX:jdbc_consumer}
+    enable-retry: ${ENABLE_RETRY:true}
+    max-retry-attempts: ${MAX_RETRY_ATTEMPTS:3}
+
+# Management and Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+    metrics:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      instance: ${CF_INSTANCE_INDEX:0}
+
+# Logging Configuration
+logging:
+  level:
+    com.insurancemegacorp.jdbcconsumer: ${LOG_LEVEL:INFO}
+    org.springframework.integration.jdbc: DEBUG
+    org.springframework.jdbc: ${JDBC_LOG_LEVEL:WARN}
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n"

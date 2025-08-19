@@ -1,0 +1,68 @@
+# Example SCDF Stream Configuration using IMC JDBC Consumer
+# This shows how to replace the standard JDBC sink with our custom consumer
+
+streams:
+  # Main telemetry processing with custom JDBC consumer
+  telemetry-to-custom-jdbc:
+    definition: ":telematics_exchange > imc-telemetry-processor > :vehicle_events > imc-jdbc-consumer"
+    description: "Enhanced telemetry processing with custom JDBC consumer and metrics"
+  
+  # HDFS sink for all telemetry data (unchanged)
+  telemetry-to-hdfs:
+    definition: ":telematics_exchange > imc-hdfs-sink"
+    description: "All telemetry data to HDFS for analytics"
+
+# Application registration (run these commands first)
+app_registrations:
+  - name: imc-jdbc-consumer
+    type: sink
+    uri: "file:///path/to/imc-jdbc-consumer-1.0.0.jar"
+
+# Deployment properties for the custom JDBC consumer
+deployment_properties:
+  imc-jdbc-consumer:
+    # Database Configuration
+    app.imc-jdbc-consumer.spring.datasource.url: "jdbc:postgresql://dbhost:5432/vehicle_events"
+    app.imc-jdbc-consumer.spring.datasource.username: "veh_user"
+    app.imc-jdbc-consumer.spring.datasource.password: "***REDACTED***"
+    app.imc-jdbc-consumer.spring.datasource.driver-class-name: "org.postgresql.Driver"
+    
+    # JDBC Consumer Configuration
+    app.imc-jdbc-consumer.jdbc.consumer.table-name: "vehicle_events"
+    app.imc-jdbc-consumer.jdbc.consumer.batch-size: "10"
+    app.imc-jdbc-consumer.jdbc.consumer.idle-timeout: "5000"
+    app.imc-jdbc-consumer.jdbc.consumer.initialize: "false"
+    
+    # Enhanced Features
+    app.imc-jdbc-consumer.jdbc.consumer.enable-metrics: "true"
+    app.imc-jdbc-consumer.jdbc.consumer.metrics-prefix: "jdbc_consumer"
+    app.imc-jdbc-consumer.jdbc.consumer.enable-retry: "true"
+    app.imc-jdbc-consumer.jdbc.consumer.max-retry-attempts: "3"
+    
+    # Column Mappings (all flattened JSON fields)
+    app.imc-jdbc-consumer.jdbc.consumer.columns: "policy_id:policy_id,vehicle_id:vehicle_id,driver_id:driver_id,vin:vin,event_time:event_time,gps_latitude:gps_latitude,gps_longitude:gps_longitude,speed_mph:speed_mph,g_force:g_force,current_street:current_street,gps_altitude:gps_altitude,speed_ms:speed_ms,gps_bearing:gps_bearing,gps_accuracy:gps_accuracy,satellite_count:satellite_count,gps_fix_time:gps_fix_time,accel_x:accel_x,accel_y:accel_y,accel_z:accel_z,gyro_pitch:gyro_pitch,gyro_roll:gyro_roll,gyro_yaw:gyro_yaw,mag_x:mag_x,mag_y:mag_y,mag_z:mag_z,heading:heading,battery_level:battery_level,signal_strength:signal_strength,orientation:orientation,screen_on:screen_on,device_charging:device_charging"
+    
+    # Spring Cloud Stream Configuration
+    app.imc-jdbc-consumer.spring.cloud.stream.bindings.jdbcConsumer-in-0.destination: "vehicle_events"
+    app.imc-jdbc-consumer.spring.cloud.stream.bindings.jdbcConsumer-in-0.group: "jdbc-consumer-group"
+    app.imc-jdbc-consumer.spring.cloud.stream.bindings.jdbcConsumer-in-0.content-type: "application/json"
+    
+    # RabbitMQ Configuration
+    app.imc-jdbc-consumer.spring.cloud.stream.rabbit.bindings.jdbcConsumer-in-0.consumer.exchangeType: "direct"
+    app.imc-jdbc-consumer.spring.cloud.stream.rabbit.bindings.jdbcConsumer-in-0.consumer.auto-bind-dlq: "true"
+    app.imc-jdbc-consumer.spring.cloud.stream.rabbit.bindings.jdbcConsumer-in-0.consumer.durable-subscription: "true"
+    app.imc-jdbc-consumer.spring.cloud.stream.rabbit.bindings.jdbcConsumer-in-0.consumer.max-attempts: "3"
+    
+    # Management and Monitoring
+    app.imc-jdbc-consumer.management.endpoints.web.exposure.include: "health,info,metrics,prometheus"
+    app.imc-jdbc-consumer.management.endpoint.health.show-details: "always"
+    app.imc-jdbc-consumer.management.metrics.export.prometheus.enabled: "true"
+    
+    # Logging
+    app.imc-jdbc-consumer.logging.level.com.insurancemegacorp.jdbcconsumer: "INFO"
+    app.imc-jdbc-consumer.logging.level.org.springframework.integration.jdbc: "DEBUG"
+    
+    # Cloud Foundry specific
+    deployer.imc-jdbc-consumer.cloudfoundry.services: "service-registry,rabbit-service"
+    deployer.imc-jdbc-consumer.memory: "1024m"
+    deployer.imc-jdbc-consumer.disk: "2048m"
