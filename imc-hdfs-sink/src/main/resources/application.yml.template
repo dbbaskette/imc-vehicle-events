@@ -29,6 +29,7 @@ hdfs:
     maxSizeMB: ${HDFS_FILE_MAX_SIZE_MB:256}
     maxAgeMinutes: ${HDFS_FILE_MAX_AGE_MINUTES:60}
     maxMessages: ${HDFS_FILE_MAX_MESSAGES:10000}
+    minMessages: ${HDFS_FILE_MIN_MESSAGES:50}
   batch:
     size: ${HDFS_BATCH_SIZE:100}
     timeoutSeconds: ${HDFS_BATCH_TIMEOUT_SECONDS:30}

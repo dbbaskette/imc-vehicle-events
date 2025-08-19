@@ -92,6 +92,9 @@ public class HdfsSink implements Consumer<String> {
     @Value("${hdfs.file.maxMessages:10000}")
     private int maxMessagesPerFile;
     
+    @Value("${hdfs.file.minMessages:50}")
+    private int minMessagesPerFile;
+    
     @Value("${hdfs.batch.size:100}")
     private int batchSize;
     
@@ -419,17 +422,46 @@ public class HdfsSink implements Consumer<String> {
         ParquetWriter<Group> writer = writers.remove(writerId);
         if (writer != null) {
             try {
-                writer.close();
                 String filePath = writerFilePaths.remove(writerId);
                 Integer messageCount = writerMessageCounts.remove(writerId);
                 writerStartTimes.remove(writerId);
                 
-                log.info("Closed writer {} due to {} with {} messages: {}", 
-                        writerId, reason, messageCount, filePath);
-                meterRegistry.counter("hdfs_files_closed_total").increment();
+                // Check minimum message threshold
+                if (messageCount != null && messageCount < minMessagesPerFile) {
+                    log.warn("Discarding file {} with only {} messages (minimum: {})", 
+                            filePath, messageCount, minMessagesPerFile);
+                    writer.close();
+                    // Delete the small file from HDFS
+                    deleteSmallFile(filePath);
+                    meterRegistry.counter("hdfs_files_discarded_total").increment();
+                } else {
+                    writer.close();
+                    log.info("Closed writer {} due to {} with {} messages: {}", 
+                            writerId, reason, messageCount, filePath);
+                    meterRegistry.counter("hdfs_files_closed_total").increment();
+                }
             } catch (Exception e) {
                 log.error("Error closing writer {}", writerId, e);
             }
+        }
+    }
+    
+    private void deleteSmallFile(String filePath) {
+        if (filePath == null) return;
+        
+        try {
+            FileSystem fs = FileSystem.get(hadoopConf);
+            Path path = new Path(filePath);
+            if (fs.exists(path)) {
+                boolean deleted = fs.delete(path, false);
+                if (deleted) {
+                    log.info("Deleted small file: {}", filePath);
+                } else {
+                    log.warn("Failed to delete small file: {}", filePath);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error deleting small file {}: {}", filePath, e.getMessage());
         }
     }
     
@@ -618,16 +650,27 @@ public class HdfsSink implements Consumer<String> {
     private void closeCurrentWriter() {
         if (currentWriter != null) {
             try {
-                currentWriter.close();
-                log.info("Closed HDFS Parquet file: {} with {} messages", currentFilePath, currentFileMessageCount);
-                meterRegistry.counter("hdfs_files_closed_total").increment();
-                meterRegistry.counter("hdfs_bytes_written_total").increment(getFileSize(currentFilePath));
+                // Check minimum message threshold
+                if (currentFileMessageCount < minMessagesPerFile) {
+                    log.warn("Discarding file {} with only {} messages (minimum: {})", 
+                            currentFilePath, currentFileMessageCount, minMessagesPerFile);
+                    currentWriter.close();
+                    // Delete the small file from HDFS
+                    deleteSmallFile(currentFilePath);
+                    meterRegistry.counter("hdfs_files_discarded_total").increment();
+                } else {
+                    currentWriter.close();
+                    log.info("Closed HDFS Parquet file: {} with {} messages", currentFilePath, currentFileMessageCount);
+                    meterRegistry.counter("hdfs_files_closed_total").increment();
+                    meterRegistry.counter("hdfs_bytes_written_total").increment(getFileSize(currentFilePath));
+                }
             } catch (Exception e) {
                 log.error("Error closing HDFS writer for file: {}", currentFilePath, e);
                 meterRegistry.counter("hdfs_file_close_failures_total").increment();
             } finally {
                 currentWriter = null;
                 currentFilePath = null;
+                currentFileMessageCount = 0;
             }
         }
     }
