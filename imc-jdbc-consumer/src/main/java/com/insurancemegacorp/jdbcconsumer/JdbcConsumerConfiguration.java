@@ -22,6 +22,7 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.stereotype.Component;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.EvaluationException;
@@ -64,9 +65,10 @@ import io.micrometer.core.instrument.Timer;
  * - Performance optimizations
  * - Custom business logic hooks
  */
+@Component
 @AutoConfiguration(after = DataSourceAutoConfiguration.class)
 @EnableConfigurationProperties(JdbcConsumerProperties.class)
-public class JdbcConsumerConfiguration {
+public class JdbcConsumerConfiguration implements Consumer<String> {
 
     private static final Log LOGGER = LogFactory.getLog(JdbcConsumerConfiguration.class);
     private static final Object NOT_SET = new Object();
@@ -123,39 +125,38 @@ public class JdbcConsumerConfiguration {
         };
     }
 
-    @Bean
-    public Consumer<String> jdbcConsumer() {
-        return jsonMessage -> {
-            try {
-                LOGGER.info("JDBC Consumer received message: " + jsonMessage.substring(0, Math.min(100, jsonMessage.length())) + "...");
-                
-                // Parse JSON and extract values for database insertion
-                Map<String, Object> data = parseJsonToMap(jsonMessage);
-                
-                // Insert into database
-                insertIntoDatabase(data);
-                
-                // Record metrics
-                if (properties.isEnableMetrics()) {
-                    meterRegistry.counter(properties.getMetricsPrefix() + "_messages_processed_total",
-                                        "table", properties.getTableName()).increment();
-                }
-                
-                LOGGER.debug("Successfully processed message for table: " + properties.getTableName());
-                
-            } catch (Exception e) {
-                LOGGER.error("Error processing message in JDBC consumer: " + e.getMessage(), e);
-                
-                // Record error metrics
-                if (properties.isEnableMetrics()) {
-                    meterRegistry.counter(properties.getMetricsPrefix() + "_messages_failed_total",
-                                        "table", properties.getTableName(),
-                                        "error", e.getClass().getSimpleName()).increment();
-                }
-                
-                throw new RuntimeException("Failed to process message", e);
+    // Implement Consumer<String> interface directly (like HDFS sink)
+    @Override
+    public void accept(String jsonMessage) {
+        try {
+            LOGGER.info("JDBC Consumer received message: " + jsonMessage.substring(0, Math.min(100, jsonMessage.length())) + "...");
+            
+            // Parse JSON and extract values for database insertion
+            Map<String, Object> data = parseJsonToMap(jsonMessage);
+            
+            // Insert into database
+            insertIntoDatabase(data);
+            
+            // Record metrics
+            if (properties.isEnableMetrics()) {
+                meterRegistry.counter(properties.getMetricsPrefix() + "_messages_processed_total",
+                                    "table", properties.getTableName()).increment();
             }
-        };
+            
+            LOGGER.debug("Successfully processed message for table: " + properties.getTableName());
+            
+        } catch (Exception e) {
+            LOGGER.error("Error processing message in JDBC consumer: " + e.getMessage(), e);
+            
+            // Record error metrics
+            if (properties.isEnableMetrics()) {
+                meterRegistry.counter(properties.getMetricsPrefix() + "_messages_failed_total",
+                                    "table", properties.getTableName(),
+                                    "error", e.getClass().getSimpleName()).increment();
+            }
+            
+            throw new RuntimeException("Failed to process message", e);
+        }
     }
 
     @Bean
