@@ -103,46 +103,24 @@ public class JdbcConsumerConfiguration {
         return builder.toString();
     }
 
-    // Integration flow removed - using direct function approach
+    @Bean
+    IntegrationFlow jdbcConsumerFlow(@Qualifier("jdbcConsumerAggregator") MessageHandler aggregator,
+            @Qualifier("jdbcConsumerMessageHandler") JdbcMessageHandler jdbcMessageHandler) {
+
+        return (flow) -> {
+            if (this.properties.getBatchSize() > 1 || this.properties.getIdleTimeout() > 0) {
+                flow.handle(aggregator);
+            }
+            flow.handle(jdbcMessageHandler);
+        };
+    }
 
     @Bean
-    Consumer<String> jdbcConsumer(JdbcMessageHandler jdbcMessageHandler) {
-        return jsonMessage -> {
-            Timer.Sample sample = null;
-            if (properties.isEnableMetrics()) {
-                sample = Timer.start(meterRegistry);
-                meterRegistry.counter(properties.getMetricsPrefix() + "_messages_total", 
-                                    "table", properties.getTableName()).increment();
-            }
-
-            try {
-                // Create a message from the JSON string
-                org.springframework.messaging.Message<String> message = 
-                    org.springframework.messaging.support.MessageBuilder.withPayload(jsonMessage).build();
-                
-                // Process the message through our JDBC handler
-                jdbcMessageHandler.handleMessage(message);
-                
-                if (properties.isEnableMetrics()) {
-                    meterRegistry.counter(properties.getMetricsPrefix() + "_messages_success", 
-                                        "table", properties.getTableName()).increment();
-                }
-                
-            } catch (Exception e) {
-                if (properties.isEnableMetrics()) {
-                    meterRegistry.counter(properties.getMetricsPrefix() + "_messages_error", 
-                                        "table", properties.getTableName(),
-                                        "error", e.getClass().getSimpleName()).increment();
-                }
-                LOGGER.error("Error processing message for table '" + properties.getTableName() + "': " + e.getMessage(), e);
-                throw new RuntimeException("Failed to process message", e);
-            } finally {
-                if (sample != null && properties.isEnableMetrics()) {
-                    sample.stop(meterRegistry.timer(properties.getMetricsPrefix() + "_message_duration",
-                                                  "table", properties.getTableName()));
-                }
-            }
-        };
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    AnnotationGatewayProxyFactoryBean<Consumer<Message<?>>> jdbcConsumer() {
+        var gatewayProxyFactoryBean = new AnnotationGatewayProxyFactoryBean<>(Consumer.class);
+        gatewayProxyFactoryBean.setDefaultRequestChannelName("jdbcConsumerFlow.input");
+        return (AnnotationGatewayProxyFactoryBean) gatewayProxyFactoryBean;
     }
 
     @Bean
