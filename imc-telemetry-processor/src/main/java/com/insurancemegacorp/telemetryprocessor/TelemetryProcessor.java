@@ -33,15 +33,26 @@ public class TelemetryProcessor {
             try {
                 JsonNode root = mapper.readTree(jsonMessage);
                 double g = root.path("g_force").asDouble(0.0);
+                
+                // Add debug logging to see what g_force values we're getting
+                if (log.isDebugEnabled()) {
+                    log.debug("Processing telemetry: g_force={}, threshold={}", g, accidentGforceThreshold);
+                }
+                
                 if (g > accidentGforceThreshold) {
                     log.info("Vehicle event detected g_force={} (threshold={})", g, accidentGforceThreshold);
                     meterRegistry.counter("telemetry_vehicle_events_total").increment();
                     // Message is already flattened, just pass it through
                     return jsonMessage;
+                } else {
+                    // Log occasionally to show we're processing but not finding crashes
+                    if (Math.random() < 0.001) { // Log ~0.1% of normal messages
+                        log.info("Normal telemetry: g_force={} (below threshold {})", g, accidentGforceThreshold);
+                    }
                 }
                 return null;
             } catch (Exception e) {
-                log.error("Failed to parse telemetry JSON", e);
+                log.error("Failed to parse telemetry JSON: {}", e.getMessage());
                 meterRegistry.counter("telemetry_invalid_messages_total").increment();
                 return null;
             }
