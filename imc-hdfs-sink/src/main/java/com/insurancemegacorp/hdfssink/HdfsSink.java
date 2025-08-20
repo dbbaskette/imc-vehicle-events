@@ -83,19 +83,19 @@ public class HdfsSink implements Consumer<String> {
     @Value("${hdfs.client.retryInterval:5000}")
     private int retryInterval;
     
-    @Value("${hdfs.file.maxSizeMB:1}")
+    @Value("${hdfs.file.maxSizeMB:30}")
     private double maxFileSizeMB;
     
-    @Value("${hdfs.file.maxAgeMinutes:30}")
+    @Value("${hdfs.file.maxAgeMinutes:5}")
     private int maxFileAgeMinutes;
     
-    @Value("${hdfs.file.maxMessages:2160}")
+    @Value("${hdfs.file.maxMessages:24000}")
     private int maxMessagesPerFile;
     
     @Value("${hdfs.file.minMessages:50}")
     private int minMessagesPerFile;
     
-    @Value("${hdfs.batch.size:100}")
+    @Value("${hdfs.batch.size:500}")
     private int batchSize;
     
     @Value("${hdfs.batch.timeoutSeconds:30}")
