@@ -321,7 +321,7 @@ public class HdfsSink implements Consumer<String> {
             String filePath = dir + "/" + fileName;
             Path file = new Path(filePath);
             
-            String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+            String schemaString = buildParquetSchema();
             MessageType schema = MessageTypeParser.parseMessageType(schemaString);
             
             Configuration writerConf = new Configuration(hadoopConf);
@@ -371,10 +371,9 @@ public class HdfsSink implements Consumer<String> {
             throw new IllegalStateException("Writer " + writerId + " not initialized");
         }
         
-        String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+        String schemaString = buildParquetSchema();
         MessageType schema = MessageTypeParser.parseMessageType(schemaString);
-        Group group = new SimpleGroup(schema);
-        group.add("raw_json", message);
+        Group group = createGroupFromJson(schema, message);
         writer.write(group);
         
         // Force flush for immediate visibility in demo mode
@@ -490,7 +489,7 @@ public class HdfsSink implements Consumer<String> {
         currentFilePath = dir + "/telemetry-" + timestamp + "-" + System.currentTimeMillis() + ".parquet";
         Path file = new Path(currentFilePath);
         
-        String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+        String schemaString = buildParquetSchema();
         MessageType schema = MessageTypeParser.parseMessageType(schemaString);
         
         Configuration writerConf = new Configuration(hadoopConf);
@@ -602,15 +601,144 @@ public class HdfsSink implements Consumer<String> {
         return defaultValue;
     }
     
+    private String buildParquetSchema() {
+        return """
+            message telemetry {
+                optional int32 policy_id;
+                optional int32 vehicle_id;
+                optional binary vin (UTF8);
+                optional int64 event_time;
+                optional float speed_mph;
+                optional int32 speed_limit_mph;
+                optional binary current_street (UTF8);
+                optional float g_force;
+                optional int32 driver_id;
+                
+                optional double gps_latitude;
+                optional double gps_longitude;
+                optional float gps_altitude;
+                optional float gps_speed;
+                optional float gps_bearing;
+                optional float gps_accuracy;
+                optional int32 gps_satellite_count;
+                optional int32 gps_fix_time;
+                
+                optional float accelerometer_x;
+                optional float accelerometer_y;
+                optional float accelerometer_z;
+                
+                optional float gyroscope_x;
+                optional float gyroscope_y;
+                optional float gyroscope_z;
+                
+                optional float magnetometer_x;
+                optional float magnetometer_y;
+                optional float magnetometer_z;
+                optional float magnetometer_heading;
+                
+                optional float barometric_pressure;
+                
+                optional int32 device_battery_level;
+                optional int32 device_signal_strength;
+                optional binary device_orientation (UTF8);
+                optional boolean device_screen_on;
+                optional boolean device_charging;
+            }
+            """;
+    }
+    
+    private Group createGroupFromJson(MessageType schema, String jsonMessage) {
+        Group group = new SimpleGroup(schema);
+        
+        try {
+            JsonNode jsonNode = objectMapper.readTree(jsonMessage);
+            
+            // Core vehicle data
+            addOptionalField(group, jsonNode, "policy_id", Integer.class);
+            addOptionalField(group, jsonNode, "vehicle_id", Integer.class);
+            addOptionalField(group, jsonNode, "vin", String.class);
+            addOptionalField(group, jsonNode, "event_time", Long.class);
+            addOptionalField(group, jsonNode, "speed_mph", Float.class);
+            addOptionalField(group, jsonNode, "speed_limit_mph", Integer.class);
+            addOptionalField(group, jsonNode, "current_street", String.class);
+            addOptionalField(group, jsonNode, "g_force", Float.class);
+            addOptionalField(group, jsonNode, "driver_id", Integer.class);
+            
+            // GPS data
+            addOptionalField(group, jsonNode, "gps_latitude", Double.class);
+            addOptionalField(group, jsonNode, "gps_longitude", Double.class);
+            addOptionalField(group, jsonNode, "gps_altitude", Float.class);
+            addOptionalField(group, jsonNode, "gps_speed", Float.class);
+            addOptionalField(group, jsonNode, "gps_bearing", Float.class);
+            addOptionalField(group, jsonNode, "gps_accuracy", Float.class);
+            addOptionalField(group, jsonNode, "gps_satellite_count", Integer.class);
+            addOptionalField(group, jsonNode, "gps_fix_time", Integer.class);
+            
+            // Accelerometer data
+            addOptionalField(group, jsonNode, "accelerometer_x", Float.class);
+            addOptionalField(group, jsonNode, "accelerometer_y", Float.class);
+            addOptionalField(group, jsonNode, "accelerometer_z", Float.class);
+            
+            // Gyroscope data
+            addOptionalField(group, jsonNode, "gyroscope_x", Float.class);
+            addOptionalField(group, jsonNode, "gyroscope_y", Float.class);
+            addOptionalField(group, jsonNode, "gyroscope_z", Float.class);
+            
+            // Magnetometer data
+            addOptionalField(group, jsonNode, "magnetometer_x", Float.class);
+            addOptionalField(group, jsonNode, "magnetometer_y", Float.class);
+            addOptionalField(group, jsonNode, "magnetometer_z", Float.class);
+            addOptionalField(group, jsonNode, "magnetometer_heading", Float.class);
+            
+            // Environmental data
+            addOptionalField(group, jsonNode, "barometric_pressure", Float.class);
+            
+            // Device data
+            addOptionalField(group, jsonNode, "device_battery_level", Integer.class);
+            addOptionalField(group, jsonNode, "device_signal_strength", Integer.class);
+            addOptionalField(group, jsonNode, "device_orientation", String.class);
+            addOptionalField(group, jsonNode, "device_screen_on", Boolean.class);
+            addOptionalField(group, jsonNode, "device_charging", Boolean.class);
+            
+        } catch (Exception e) {
+            log.error("Failed to parse JSON message for parquet writing: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to parse JSON message", e);
+        }
+        
+        return group;
+    }
+    
+    private void addOptionalField(Group group, JsonNode jsonNode, String fieldName, Class<?> fieldType) {
+        JsonNode fieldNode = jsonNode.get(fieldName);
+        if (fieldNode != null && !fieldNode.isNull()) {
+            try {
+                if (fieldType == String.class) {
+                    group.add(fieldName, fieldNode.asText());
+                } else if (fieldType == Integer.class) {
+                    group.add(fieldName, fieldNode.asInt());
+                } else if (fieldType == Long.class) {
+                    group.add(fieldName, fieldNode.asLong());
+                } else if (fieldType == Float.class) {
+                    group.add(fieldName, (float) fieldNode.asDouble());
+                } else if (fieldType == Double.class) {
+                    group.add(fieldName, fieldNode.asDouble());
+                } else if (fieldType == Boolean.class) {
+                    group.add(fieldName, fieldNode.asBoolean());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to add field {} with value {}: {}", fieldName, fieldNode, e.getMessage());
+            }
+        }
+    }
+    
     private void writeMessage(String message) throws IOException {
         if (currentWriter == null) {
             throw new IllegalStateException("Writer not initialized");
         }
         
-        String schemaString = "message telemetry { required binary raw_json (UTF8); }";
+        String schemaString = buildParquetSchema();
         MessageType schema = MessageTypeParser.parseMessageType(schemaString);
-        Group group = new SimpleGroup(schema);
-        group.add("raw_json", message);
+        Group group = createGroupFromJson(schema, message);
         currentWriter.write(group);
         
         // Force flush for immediate visibility in demo mode
