@@ -615,39 +615,39 @@ public class HdfsSink implements Consumer<String> {
     private String buildParquetSchema() {
         return """
             message telemetry {
-                optional int32 policy_id;
-                optional int32 vehicle_id;
+                optional int64 policy_id;
+                optional int64 vehicle_id;
                 optional binary vin (UTF8);
-                optional int64 event_time;
-                optional float speed_mph;
+                optional binary event_time (UTF8);
+                optional double speed_mph;
                 optional int32 speed_limit_mph;
                 optional binary current_street (UTF8);
-                optional float g_force;
+                optional double g_force;
                 optional int32 driver_id;
                 
                 optional double gps_latitude;
                 optional double gps_longitude;
-                optional float gps_altitude;
-                optional float gps_speed;
-                optional float gps_bearing;
-                optional float gps_accuracy;
+                optional double gps_altitude;
+                optional double gps_speed;
+                optional double gps_bearing;
+                optional double gps_accuracy;
                 optional int32 gps_satellite_count;
                 optional int32 gps_fix_time;
                 
-                optional float accelerometer_x;
-                optional float accelerometer_y;
-                optional float accelerometer_z;
+                optional double accelerometer_x;
+                optional double accelerometer_y;
+                optional double accelerometer_z;
                 
-                optional float gyroscope_x;
-                optional float gyroscope_y;
-                optional float gyroscope_z;
+                optional double gyroscope_x;
+                optional double gyroscope_y;
+                optional double gyroscope_z;
                 
-                optional float magnetometer_x;
-                optional float magnetometer_y;
-                optional float magnetometer_z;
-                optional float magnetometer_heading;
+                optional double magnetometer_x;
+                optional double magnetometer_y;
+                optional double magnetometer_z;
+                optional double magnetometer_heading;
                 
-                optional float barometric_pressure;
+                optional double barometric_pressure;
                 
                 optional int32 device_battery_level;
                 optional int32 device_signal_strength;
@@ -665,44 +665,44 @@ public class HdfsSink implements Consumer<String> {
             JsonNode jsonNode = objectMapper.readTree(jsonMessage);
             
             // Core vehicle data
-            addOptionalField(group, jsonNode, "policy_id", Integer.class);
-            addOptionalField(group, jsonNode, "vehicle_id", Integer.class);
+            addOptionalField(group, jsonNode, "policy_id", Long.class);
+            addOptionalField(group, jsonNode, "vehicle_id", Long.class);
             addOptionalField(group, jsonNode, "vin", String.class);
-            addOptionalField(group, jsonNode, "event_time", Long.class);
-            addOptionalField(group, jsonNode, "speed_mph", Float.class);
+            addOptionalField(group, jsonNode, "event_time", String.class);
+            addOptionalField(group, jsonNode, "speed_mph", Double.class);
             addOptionalField(group, jsonNode, "speed_limit_mph", Integer.class);
             addOptionalField(group, jsonNode, "current_street", String.class);
-            addOptionalField(group, jsonNode, "g_force", Float.class);
+            addOptionalField(group, jsonNode, "g_force", Double.class);
             addOptionalField(group, jsonNode, "driver_id", Integer.class);
             
             // GPS data
             addOptionalField(group, jsonNode, "gps_latitude", Double.class);
             addOptionalField(group, jsonNode, "gps_longitude", Double.class);
-            addOptionalField(group, jsonNode, "gps_altitude", Float.class);
-            addOptionalField(group, jsonNode, "gps_speed", Float.class);
-            addOptionalField(group, jsonNode, "gps_bearing", Float.class);
-            addOptionalField(group, jsonNode, "gps_accuracy", Float.class);
+            addOptionalField(group, jsonNode, "gps_altitude", Double.class);
+            addOptionalField(group, jsonNode, "gps_speed", Double.class);
+            addOptionalField(group, jsonNode, "gps_bearing", Double.class);
+            addOptionalField(group, jsonNode, "gps_accuracy", Double.class);
             addOptionalField(group, jsonNode, "gps_satellite_count", Integer.class);
             addOptionalField(group, jsonNode, "gps_fix_time", Integer.class);
             
             // Accelerometer data
-            addOptionalField(group, jsonNode, "accelerometer_x", Float.class);
-            addOptionalField(group, jsonNode, "accelerometer_y", Float.class);
-            addOptionalField(group, jsonNode, "accelerometer_z", Float.class);
+            addOptionalField(group, jsonNode, "accelerometer_x", Double.class);
+            addOptionalField(group, jsonNode, "accelerometer_y", Double.class);
+            addOptionalField(group, jsonNode, "accelerometer_z", Double.class);
             
             // Gyroscope data
-            addOptionalField(group, jsonNode, "gyroscope_x", Float.class);
-            addOptionalField(group, jsonNode, "gyroscope_y", Float.class);
-            addOptionalField(group, jsonNode, "gyroscope_z", Float.class);
+            addOptionalField(group, jsonNode, "gyroscope_x", Double.class);
+            addOptionalField(group, jsonNode, "gyroscope_y", Double.class);
+            addOptionalField(group, jsonNode, "gyroscope_z", Double.class);
             
             // Magnetometer data
-            addOptionalField(group, jsonNode, "magnetometer_x", Float.class);
-            addOptionalField(group, jsonNode, "magnetometer_y", Float.class);
-            addOptionalField(group, jsonNode, "magnetometer_z", Float.class);
-            addOptionalField(group, jsonNode, "magnetometer_heading", Float.class);
+            addOptionalField(group, jsonNode, "magnetometer_x", Double.class);
+            addOptionalField(group, jsonNode, "magnetometer_y", Double.class);
+            addOptionalField(group, jsonNode, "magnetometer_z", Double.class);
+            addOptionalField(group, jsonNode, "magnetometer_heading", Double.class);
             
             // Environmental data
-            addOptionalField(group, jsonNode, "barometric_pressure", Float.class);
+            addOptionalField(group, jsonNode, "barometric_pressure", Double.class);
             
             // Device data
             addOptionalField(group, jsonNode, "device_battery_level", Integer.class);
@@ -728,6 +728,7 @@ public class HdfsSink implements Consumer<String> {
                 } else if (fieldType == Integer.class) {
                     group.add(fieldName, fieldNode.asInt());
                 } else if (fieldType == Long.class) {
+                    // Convert integers to long for int64 parquet fields
                     group.add(fieldName, fieldNode.asLong());
                 } else if (fieldType == Float.class) {
                     group.add(fieldName, (float) fieldNode.asDouble());
