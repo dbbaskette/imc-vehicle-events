@@ -83,13 +83,13 @@ public class HdfsSink implements Consumer<String> {
     @Value("${hdfs.client.retryInterval:5000}")
     private int retryInterval;
     
-    @Value("${hdfs.file.maxSizeMB:256}")
-    private int maxFileSizeMB;
+    @Value("${hdfs.file.maxSizeMB:1}")
+    private double maxFileSizeMB;
     
-    @Value("${hdfs.file.maxAgeMinutes:60}")
+    @Value("${hdfs.file.maxAgeMinutes:30}")
     private int maxFileAgeMinutes;
     
-    @Value("${hdfs.file.maxMessages:10000}")
+    @Value("${hdfs.file.maxMessages:2160}")
     private int maxMessagesPerFile;
     
     @Value("${hdfs.file.minMessages:50}")
@@ -410,6 +410,17 @@ public class HdfsSink implements Consumer<String> {
         if (messageCount != null && messageCount >= maxMessagesPerFile) {
             shouldRoll = true;
             reason = "message count";
+        }
+        
+        // Check file size
+        String filePath = writerFilePaths.get(writerId);
+        if (filePath != null) {
+            long fileSizeBytes = getFileSize(filePath);
+            double fileSizeMB = fileSizeBytes / (1024.0 * 1024.0);
+            if (fileSizeMB > maxFileSizeMB) {
+                shouldRoll = true;
+                reason = "file size";
+            }
         }
         
         if (shouldRoll) {
@@ -767,6 +778,16 @@ public class HdfsSink implements Consumer<String> {
         if (currentFileMessageCount >= maxMessagesPerFile) {
             shouldRoll = true;
             reason = "message count exceeded " + maxMessagesPerFile;
+        }
+        
+        // Check file size
+        if (currentFilePath != null) {
+            long fileSizeBytes = getFileSize(currentFilePath);
+            double fileSizeMB = fileSizeBytes / (1024.0 * 1024.0);
+            if (fileSizeMB > maxFileSizeMB) {
+                shouldRoll = true;
+                reason = "file size exceeded " + maxFileSizeMB + " MB";
+            }
         }
         
         if (shouldRoll) {
